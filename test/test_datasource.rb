@@ -5,25 +5,13 @@ require 'pry'
 class PostsDatasource < Datasource
   attributes :id, :title, :blog_id
 
-  class Author < Datasource::ComputedAttribute
-    depends posts: [ :author_first_name, :author_last_name ]
-
-    def value
-      {
-        "name" => "#{author_first_name} #{author_last_name}"
-      }
-    end
+  computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
+    { "name" => "#{author_first_name} #{author_last_name}" }
   end
-  attribute :author, Author
 
-  class AuthorName < Datasource::QueryAttribute
-    depends :posts
-
-    def select_value
-      "posts.author_first_name || ' ' || posts.author_last_name"
-    end
+  query_attribute :author_name, :posts do
+    "posts.author_first_name || ' ' || posts.author_last_name"
   end
-  attribute :author_name, AuthorName
 end
 
 class BlogsDatasource < Datasource

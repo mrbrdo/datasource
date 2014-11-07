@@ -56,6 +56,24 @@ class Datasource
     def includes_many(name, klass, foreign_key)
       @_attributes.push name: name.to_s, klass: klass, foreign_key: foreign_key.to_s
     end
+
+    def computed_attribute(name, deps, &block)
+      klass = Class.new(ComputedAttribute) do
+        depends deps
+
+        define_method(:value, &block)
+      end
+      attribute name, klass
+    end
+
+    def query_attribute(name, deps, &block)
+      klass = Class.new(QueryAttribute) do
+        depends deps
+
+        define_method(:select_value, &block)
+      end
+      attribute name, klass
+    end
   end
 
   class ComputedAttribute
