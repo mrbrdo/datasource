@@ -52,6 +52,10 @@ class Datasource
     def attribute(name, klass = nil)
       @_attributes.push name: name.to_s, klass: klass
     end
+
+    def includes_many(name, klass, foreign_key)
+      @_attributes.push name: name.to_s, klass: klass, foreign_key: foreign_key.to_s
+    end
   end
 
   class ComputedAttribute
@@ -99,9 +103,21 @@ class Datasource
     @scope = scope
     @expose_attributes = []
     @select_attributes = []
+    @datasource_data = {}
   end
 
   def select(*names)
+    names = names.flat_map do |name|
+      if name.kind_of?(Hash)
+        # datasource data
+        name.each_pair do |k, v|
+          @datasource_data[k.to_s] = v
+        end
+        name.keys
+      else
+        name
+      end
+    end
     @expose_attributes = (@expose_attributes + names.map(&:to_s)).uniq
     append_required_select_values
     self
@@ -119,18 +135,50 @@ class Datasource
       hash
     end
 
-    computed_expose_attributes = @expose_attributes.select do |v|
-      attribute_map[v][:klass] &&
-        attribute_map[v][:klass].ancestors.include?(ComputedAttribute)
+    computed_expose_attributes = []
+    datasources = {}
+
+    @expose_attributes.each do |name|
+      att = attribute_map[name]
+      klass = att[:klass]
+      next unless klass
+
+      if klass.ancestors.include?(ComputedAttribute)
+        computed_expose_attributes.push(att)
+      elsif klass.ancestors.include?(Datasource)
+        ds_select = @datasource_data[att[:name]][:select]
+        unless ds_select.include?(att[:foreign_key])
+          ds_select += [att[:foreign_key]]
+        end
+        ds_scope = @datasource_data[att[:name]][:scope]
+        column = "#{ds_scope.klass.table_name}.#{att[:foreign_key]}"
+        ds_scope = ds_scope.where("#{column} IN (?)",
+            rows.map { |row| row["id"] })
+        datasources[att] = att[:klass].new(ds_scope)
+        .select(ds_select)
+        .results.group_by do |row|
+          row[att[:foreign_key]]
+        end
+        unless @datasource_data[att[:name]][:select].include?(att[:foreign_key])
+          datasources[att].each_pair do |k, rows|
+            rows.each do |row|
+              row.delete(att[:foreign_key])
+            end
+          end
+        end
+      end
     end
 
     # TODO: field names...
     rows.each do |row|
-      computed_expose_attributes.each do |key|
-        klass = attribute_map[key][:klass]
+      computed_expose_attributes.each do |att|
+        klass = att[:klass]
         if klass
-          row[key] = klass.new(row).value
+          row[att[:name]] = klass.new(row).value
         end
+      end
+      datasources.each_pair do |att, rows|
+        row[att[:name]] = Array(rows[row["id"]])
       end
       row.delete_if do |key, value|
         !@expose_attributes.include?(key)
@@ -150,6 +198,8 @@ private
   end
 
   def append_required_select_values
+    append_select_value("#{@scope.klass.table_name}.id")
+
     self.class._attributes.each do |att|
       if @expose_attributes.include?(att[:name])
         if att[:klass] == nil
