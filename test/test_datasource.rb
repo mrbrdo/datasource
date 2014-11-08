@@ -2,7 +2,7 @@ require 'test_helper'
 require 'active_record_helper'
 require 'pry'
 
-class PostsDatasource < Datasource
+class PostsDatasource < Datasource::Base
   attributes :id, :title, :blog_id
 
   computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
@@ -14,7 +14,7 @@ class PostsDatasource < Datasource
   end
 end
 
-class BlogsDatasource < Datasource
+class BlogsDatasource < Datasource::Base
   attributes :id
 
   includes_many :posts, PostsDatasource, :blog_id
