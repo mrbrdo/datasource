@@ -38,8 +38,19 @@ class SerializerCompositeTest < ActiveSupport::TestCase
 
     serializer = BlogsAndPostsSerializer.new(Blog.all, Post.all)
 
-    assert_equal({"blogs"=>[{"id"=>1, "title"=>"Blog 1", "posts"=>[{"id"=>1}, {"id"=>2}]}, {"id"=>2, "title"=>"Blog 2", "posts"=>[]}], "posts"=>[{"id"=>1, "title"=>"Post 1"}, {"id"=>2, "title"=>"Post 2"}]},
-      serializer.as_json)
+    expected_result = {
+      "blogs"=>[
+        {"id"=>1, "title"=>"Blog 1", "posts"=>[
+          {"id"=>1}, {"id"=>2}
+        ]},
+        {"id"=>2, "title"=>"Blog 2", "posts"=>[]}
+      ],
+      "posts"=>[
+        {"id"=>1, "title"=>"Post 1"},
+        {"id"=>2, "title"=>"Post 2"}
+      ]
+    }
+    assert_equal(expected_result, serializer.as_json)
   end
 
   def teardown
