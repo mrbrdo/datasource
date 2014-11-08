@@ -86,7 +86,7 @@ module Datasource
           if attribute_exposed?(att[:name])
             if att[:klass] == nil
               select_values.add("#{scope.klass.table_name}.#{att[:name]}")
-            elsif att[:klass].ancestors.include?(ComputedAttribute)
+            elsif att[:klass].ancestors.include?(Attributes::ComputedAttribute)
               att[:klass]._depends.keys.map(&:to_s).each do |name|
                 next if name == scope.klass.table_name
                 ensure_table_join!(scope, name, att)
@@ -97,7 +97,7 @@ module Datasource
                 end
                 # TODO: handle depends on virtual attribute
               end
-            elsif att[:klass].ancestors.include?(QueryAttribute)
+            elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
               select_values.add("(#{att[:klass].new.select_value}) as #{att[:name]}")
               att[:klass]._depends.each do |name|
                 next if name == scope.klass.table_name
