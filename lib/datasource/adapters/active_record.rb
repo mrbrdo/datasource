@@ -121,6 +121,37 @@ module Datasource
         end
         raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
+
+      module DatasourceGenerator
+        def From(*args)
+          klass = args.first
+          if klass.ancestors.include?(::ActiveRecord::Base)
+            Class.new(Datasource::Base) do
+              attributes *klass.column_names
+
+              klass.reflections.values.each do |reflection|
+                if reflection.macro == :has_many
+                  ds_name = "#{reflection.klass.name.pluralize}Datasource"
+                  begin
+                    ds_name.constantize
+                  rescue NameError
+                    begin
+                      Object.const_set(ds_name, Datasource.From(reflection.klass))
+                    rescue SystemStackError
+                      fail "Circular reference between #{klass.name} and #{reflection.klass.name}, create Datasets manually"
+                    end
+                  end
+                  includes_many reflection.name, ds_name.constantize, reflection.foreign_key
+                end
+              end
+            end
+          else
+            super if defined?(super)
+          end
+        end
+      end
     end
   end
+
+  extend Adapters::ActiveRecord::DatasourceGenerator
 end

@@ -1,35 +1,35 @@
 require 'test_helper'
 require 'active_record_helper'
 
-class PostsDatasource < Datasource::Base
-  attributes :id, :title, :blog_id
-
-  query_attribute :author_name, :posts do
-    "posts.author_first_name || ' ' || posts.author_last_name"
-  end
-end
-
-class BlogsDatasource < Datasource::Base
-  attributes :id, :title
-  includes_many :posts, PostsDatasource, :blog_id
-end
-
-class BlogsAndPostsSerializer < Datasource::Serializer::Composite
-  hash do
-    key :blogs do
-      datasource BlogsDatasource
-      attributes :id, :title,
-        posts: { select: [ :id ], scope: Post.all }
-    end
-
-    key :posts do
-      datasource PostsDatasource
-      attributes :id, :title, :author_name
-    end
-  end
-end
-
 class SerializerCompositeTest < ActiveSupport::TestCase
+  class PostsDatasource < Datasource::Base
+    attributes :id, :title, :blog_id
+
+    query_attribute :author_name, :posts do
+      "posts.author_first_name || ' ' || posts.author_last_name"
+    end
+  end
+
+  class BlogsDatasource < Datasource::Base
+    attributes :id, :title
+    includes_many :posts, PostsDatasource, :blog_id
+  end
+
+  class BlogsAndPostsSerializer < Datasource::Serializer::Composite
+    hash do
+      key :blogs do
+        datasource BlogsDatasource
+        attributes :id, :title,
+          posts: { select: [ :id ], scope: Post.all }
+      end
+
+      key :posts do
+        datasource PostsDatasource
+        attributes :id, :title, :author_name
+      end
+    end
+  end
+
   # SELECT blogs.id, blogs.title FROM "blogs"
   # SELECT posts.id, posts.blog_id FROM "posts"  WHERE (posts.blog_id IN (1,2))
   # SELECT posts.id, posts.title, (posts.author_first_name || ' ' || posts.author_last_name) as author_name FROM "posts"

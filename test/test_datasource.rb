@@ -1,25 +1,25 @@
 require 'test_helper'
 require 'active_record_helper'
 
-class PostsDatasource < Datasource::Base
-  attributes :id, :title, :blog_id
-
-  computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
-    { "name" => "#{author_first_name} #{author_last_name}" }
-  end
-
-  query_attribute :author_name, :posts do
-    "posts.author_first_name || ' ' || posts.author_last_name"
-  end
-end
-
-class BlogsDatasource < Datasource::Base
-  attributes :id
-
-  includes_many :posts, PostsDatasource, :blog_id
-end
-
 class DatasourceTest < ActiveSupport::TestCase
+  class PostsDatasource < Datasource::Base
+    attributes :id, :title, :blog_id
+
+    computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
+      { "name" => "#{author_first_name} #{author_last_name}" }
+    end
+
+    query_attribute :author_name, :posts do
+      "posts.author_first_name || ' ' || posts.author_last_name"
+    end
+  end
+
+  class BlogsDatasource < Datasource::Base
+    attributes :id
+
+    includes_many :posts, PostsDatasource, :blog_id
+  end
+
   def test_basic
     blog = Blog.create! title: "Blog 1"
     blog.posts.create! title: "Post 1", author_first_name: "John", author_last_name: "Doe"
