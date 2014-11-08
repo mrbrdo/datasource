@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     datasource (0.0.1)
-      activerecord
+      activerecord (~> 4)
 
 GEM
   remote: https://rubygems.org/
@@ -41,4 +41,4 @@ PLATFORMS
 
 DEPENDENCIES
   datasource!
-  pry
+  pry (~> 0.9)
