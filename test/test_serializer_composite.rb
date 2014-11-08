@@ -2,16 +2,13 @@ require 'test_helper'
 require 'active_record_helper'
 
 class SerializerCompositeTest < ActiveSupport::TestCase
-  class PostsDatasource < Datasource::Base
-    attributes :id, :title, :blog_id
-
+  class PostsDatasource < Datasource.From(Post)
     query_attribute :author_name, :posts do
       "posts.author_first_name || ' ' || posts.author_last_name"
     end
   end
 
-  class BlogsDatasource < Datasource::Base
-    attributes :id, :title
+  class BlogsDatasource < Datasource.From(Blog)
     includes_many :posts, PostsDatasource, :blog_id
   end
 

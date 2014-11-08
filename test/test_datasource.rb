@@ -2,9 +2,7 @@ require 'test_helper'
 require 'active_record_helper'
 
 class DatasourceTest < ActiveSupport::TestCase
-  class PostsDatasource < Datasource::Base
-    attributes :id, :title, :blog_id
-
+  class PostsDatasource < Datasource.From(Post)
     computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
       { "name" => "#{author_first_name} #{author_last_name}" }
     end
@@ -14,9 +12,7 @@ class DatasourceTest < ActiveSupport::TestCase
     end
   end
 
-  class BlogsDatasource < Datasource::Base
-    attributes :id
-
+  class BlogsDatasource < Datasource.From(Blog)
     includes_many :posts, PostsDatasource, :blog_id
   end
 
