@@ -126,22 +126,30 @@ module Datasource
         def From(*args)
           klass = args.first
           if klass.ancestors.include?(::ActiveRecord::Base)
+            assocs = args[1] || false
+            skip = (args[2] || []).map(&:to_s)
+            column_names = klass.column_names.reject do |name|
+              skip.include?(name)
+            end
             Class.new(Datasource::Base) do
-              attributes *klass.column_names
+              attributes *column_names
 
-              klass.reflections.values.each do |reflection|
-                if reflection.macro == :has_many
-                  ds_name = "#{reflection.klass.name.pluralize}Datasource"
-                  begin
-                    ds_name.constantize
-                  rescue NameError
+              if assocs
+                klass.reflections.values.each do |reflection|
+                  next if skip.include?(reflection.name.to_s)
+                  if reflection.macro == :has_many
+                    ds_name = "#{reflection.klass.name.pluralize}Datasource"
                     begin
-                      Object.const_set(ds_name, Datasource.From(reflection.klass))
-                    rescue SystemStackError
-                      fail "Circular reference between #{klass.name} and #{reflection.klass.name}, create Datasets manually"
+                      ds_name.constantize
+                    rescue NameError
+                      begin
+                        Object.const_set(ds_name, Datasource.From(reflection.klass))
+                      rescue SystemStackError
+                        fail "Circular reference between #{klass.name} and #{reflection.klass.name}, create Datasets manually"
+                      end
                     end
+                    includes_many reflection.name, ds_name.constantize, reflection.foreign_key
                   end
-                  includes_many reflection.name, ds_name.constantize, reflection.foreign_key
                 end
               end
             end
