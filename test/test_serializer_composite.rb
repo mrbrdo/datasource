@@ -32,7 +32,7 @@ end
 class SerializerCompositeTest < ActiveSupport::TestCase
   # SELECT blogs.id, blogs.title FROM "blogs"
   # SELECT posts.id, posts.blog_id FROM "posts"  WHERE (posts.blog_id IN (1,2))
-  # SELECT posts.id, posts.title FROM "posts"
+  # SELECT posts.id, posts.title, (posts.author_first_name || ' ' || posts.author_last_name) as author_name FROM "posts"
   def test_blogs_and_posts_serializer
     blog = Blog.create! title: "Blog 1"
     blog.posts.create! title: "Post 1", author_first_name: "John", author_last_name: "Doe"
