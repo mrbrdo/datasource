@@ -3,6 +3,10 @@ require 'active_record_helper'
 
 class PostsDatasource < Datasource::Base
   attributes :id, :title, :blog_id
+
+  query_attribute :author_name, :posts do
+    "posts.author_first_name || ' ' || posts.author_last_name"
+  end
 end
 
 class BlogsDatasource < Datasource::Base
@@ -20,7 +24,7 @@ class BlogsAndPostsSerializer < Datasource::Serializer::Composite
 
     key :posts do
       datasource PostsDatasource
-      attributes :id, :title
+      attributes :id, :title, :author_name
     end
   end
 end
@@ -45,8 +49,8 @@ class SerializerCompositeTest < ActiveSupport::TestCase
         {"id"=>2, "title"=>"Blog 2", "posts"=>[]}
       ],
       "posts"=>[
-        {"id"=>1, "title"=>"Post 1"},
-        {"id"=>2, "title"=>"Post 2"}
+        {"id"=>1, "title"=>"Post 1", "author_name"=>"John Doe"},
+        {"id"=>2, "title"=>"Post 2", "author_name"=>"Maria Doe"}
       ]
     }
     assert_equal(expected_result, serializer.as_json)
