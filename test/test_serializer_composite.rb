@@ -1,6 +1,5 @@
 require 'test_helper'
 require 'active_record_helper'
-require 'pry'
 
 class PostsDatasource < Datasource::Base
   attributes :id, :title, :blog_id
