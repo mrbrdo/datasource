@@ -1,66 +1,28 @@
 require 'set'
 
-ActiveRecord::Calculations
-module ActiveRecord
-  module Calculations
-    def pluck_hash(*column_names)
-      column_names.map! do |column_name|
-        if column_name.is_a?(Symbol) && attribute_alias?(column_name)
-          attribute_alias(column_name)
-        else
-          column_name.to_s
-        end
-      end
-
-      if has_include?(column_names.first)
-        construct_relation_for_association_calculations.pluck(*column_names)
-      else
-        relation = spawn
-        relation.select_values = column_names.map { |cn|
-          columns_hash.key?(cn) ? arel_table[cn] : cn
-        }
-        result = klass.connection.select_all(relation.arel, nil, bind_values)
-        columns = result.columns.map do |key|
-          klass.column_types.fetch(key) {
-            result.column_types.fetch(key) { result.identity_type }
-          }
-        end
-
-        result.rows.map do |values|
-          {}.tap do |hash|
-            values.zip(columns, result.columns).each do |v|
-              single_attr_hash = { v[2] => v[0] }
-              hash[v[2]] = v[1].type_cast klass.initialize_attributes(single_attr_hash).values.first
-            end
-          end
-        end
-      end
-    end
-  end
-end
-
 module Datasource
   module Adapters
-    module ActiveRecord
+    module Sequel
       ID_KEY = "id"
 
       def to_query(scope)
-        ActiveRecord::Base.uncached do
-          scope.select(*get_select_values(scope)).to_sql
-        end
+        scope.sql
       end
 
       def get_rows(scope)
-        scope.pluck_hash(*get_select_values(scope))
+        # directly return hash from database instead of Sequel model
+        scope.row_proc = ->(x) { x }
+        scope.select(*get_sequel_select_values(scope)).to_a.map(&:stringify_keys)
       end
 
+      # not ORM-specific
       def included_datasource_rows(att, datasource_data, rows)
         ds_select = datasource_data[:select]
         unless ds_select.include?(att[:foreign_key])
           ds_select += [att[:foreign_key]]
         end
         ds_scope = datasource_data[:scope]
-        column = "#{ds_scope.klass.table_name}.#{att[:foreign_key]}"
+        column = "#{primary_scope_table(ds_scope)}.#{att[:foreign_key]}"
         ds_scope = ds_scope.where("#{column} IN (?)",
             rows.map { |row| row[att[:id_key]] })
         grouped_results = att[:klass].new(ds_scope)
@@ -78,17 +40,23 @@ module Datasource
         grouped_results
       end
 
+      def get_sequel_select_values(scope)
+        get_select_values(scope).map { |str| ::Sequel.lit(str) }
+      end
+
+      # not ORM-specific
       def get_select_values(scope)
+        scope_table = primary_scope_table(scope)
         select_values = Set.new
-        select_values.add("#{scope.klass.table_name}.#{self.class.adapter::ID_KEY}")
+        select_values.add("#{scope_table}.#{self.class.adapter::ID_KEY}")
 
         self.class._attributes.each do |att|
           if attribute_exposed?(att[:name])
             if att[:klass] == nil
-              select_values.add("#{scope.klass.table_name}.#{att[:name]}")
+              select_values.add("#{scope_table}.#{att[:name]}")
             elsif att[:klass].ancestors.include?(Attributes::ComputedAttribute)
               att[:klass]._depends.keys.map(&:to_s).each do |name|
-                next if name == scope.klass.table_name
+                next if name == scope_table
                 next if name == "loader"
                 ensure_table_join!(scope, name, att)
               end
@@ -102,7 +70,7 @@ module Datasource
             elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
               select_values.add("(#{att[:klass].new.select_value}) as #{att[:name]}")
               att[:klass]._depends.each do |name|
-                next if name == scope.klass.table_name
+                next if name == scope_table
                 ensure_table_join!(scope, name, att)
               end
             end
@@ -111,15 +79,13 @@ module Datasource
         select_values.to_a
       end
 
+      def primary_scope_table(scope)
+        scope.first_source_alias.to_s
+      end
+
       def ensure_table_join!(scope, name, att)
-        join_value = scope.joins_values.find do |value|
-          if value.is_a?(Symbol)
-            value.to_s == att[:name]
-          elsif value.is_a?(String)
-            if value =~ /join (\w+)/i
-              $1 == att[:name]
-            end
-          end
+        join_value = Hash(scope.opts[:join]).find do |value|
+          (value.table_alias || value.table).to_s == att[:name]
         end
         raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
@@ -127,30 +93,31 @@ module Datasource
       module DatasourceGenerator
         def From(*args)
           klass = args.first
-          if klass.ancestors.include?(::ActiveRecord::Base)
+          if klass.ancestors.include?(::Sequel::Model)
             assocs = args[1] || false
             skip = (args[2] || []).map(&:to_s)
-            column_names = klass.column_names.reject do |name|
-              skip.include?(name)
+            column_names = klass.columns.reject do |name|
+              skip.include?(name.to_s)
             end
             Class.new(Datasource::Base) do
               attributes *column_names
 
               if assocs
-                klass.reflections.values.each do |reflection|
-                  next if skip.include?(reflection.name.to_s)
-                  if reflection.macro == :has_many
-                    ds_name = "#{reflection.klass.name.pluralize}Datasource"
+                klass.associations.each do |association|
+                  reflection = klass.association_reflection(association)
+                  next if skip.include?(reflection[:name].to_s)
+                  if reflection[:type] == :many_to_many
+                    ds_name = "#{reflection[:model].name.pluralize}Datasource"
                     begin
                       ds_name.constantize
                     rescue NameError
                       begin
-                        Object.const_set(ds_name, Datasource.From(reflection.klass))
+                        Object.const_set(ds_name, Datasource.From(reflection[:model]))
                       rescue SystemStackError
-                        fail "Circular reference between #{klass.name} and #{reflection.klass.name}, create Datasets manually"
+                        fail "Circular reference between #{klass.name} and #{reflection[:model].name}, create Datasets manually"
                       end
                     end
-                    includes_many reflection.name, ds_name.constantize, reflection.foreign_key
+                    includes_many reflection[:name], ds_name.constantize, reflection[:key]
                   end
                 end
               end
@@ -163,5 +130,5 @@ module Datasource
     end
   end
 
-  extend Adapters::ActiveRecord::DatasourceGenerator
+  extend Adapters::Sequel::DatasourceGenerator
 end

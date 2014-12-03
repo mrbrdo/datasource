@@ -29,7 +29,7 @@ module Datasource
   end
 
   class Datasource::Base
-    def self.computed_attribute(name, deps, &block)
+    def self.computed(name, deps, &block)
       klass = Class.new(Attributes::ComputedAttribute) do
         depends deps
 

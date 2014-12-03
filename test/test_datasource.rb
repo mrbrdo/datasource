@@ -3,11 +3,11 @@ require 'active_record_helper'
 
 class DatasourceTest < ActiveSupport::TestCase
   class PostsDatasource < Datasource.From(Post)
-    computed_attribute :author, posts: [ :author_first_name, :author_last_name ] do
+    computed :author, posts: [ :author_first_name, :author_last_name ] do
       { "name" => "#{author_first_name} #{author_last_name}" }
     end
 
-    query_attribute :author_name, :posts do
+    query :author_name, :posts do
       "posts.author_first_name || ' ' || posts.author_last_name"
     end
   end

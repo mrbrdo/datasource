@@ -16,7 +16,7 @@ module Datasource
   end
 
   class Datasource::Base
-    def self.query_attribute(name, deps, &block)
+    def self.query(name, deps, &block)
       klass = Class.new(Attributes::QueryAttribute) do
         depends deps
 

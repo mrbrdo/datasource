@@ -1,12 +1,17 @@
 module Datasource
   class Base
     class << self
-      attr_accessor :_attributes, :_virtual_attributes, :_associations
+      attr_accessor :_attributes, :_change_scope, :_loaders
       attr_accessor :adapter
 
       def inherited(base)
         base._attributes = (_attributes || []).dup
-        @adapter ||= Datasource::Adapters::ActiveRecord
+        base._loaders = (_loaders || {}).dup
+        @adapter ||= if defined? ActiveRecord
+          Datasource::Adapters::ActiveRecord
+        elsif defined? Sequel
+          Datasource::Adapters::Sequel
+        end
         self.send :include, @adapter
       end
 
@@ -21,10 +26,23 @@ module Datasource
       def includes_many(name, klass, foreign_key)
         @_attributes.push name: name.to_s, klass: klass, foreign_key: foreign_key.to_s, id_key: self::ID_KEY
       end
+
+      def change_scope(&block)
+        @_change_scope = block
+      end
+
+      def loader(name, &block)
+        @_loaders[name.to_sym] = block
+      end
     end
 
     def initialize(scope)
-      @scope = scope
+      @scope =
+        if self.class._change_scope
+          self.class._change_scope.call(scope)
+        else
+          scope
+        end
       @expose_attributes = []
       @datasource_data = {}
     end
@@ -77,12 +95,22 @@ module Datasource
         end
       end
 
+      loader_results = {}
+
       # TODO: field names...
       rows.each do |row|
         computed_expose_attributes.each do |att|
           klass = att[:klass]
           if klass
-            row[att[:name]] = klass.new(row).value
+            row[att[:name]] = if klass._depends.keys.include?(:loader)
+              row_loader_results ||= Array(klass._depends[:loader]).map do |loader_name|
+                (loader_results[loader_name] ||= self.class._loaders[loader_name].call(rows, @scope))[row[self.class::ID_KEY]]
+              end
+              p row_loader_results
+              klass.new(row).value(*row_loader_results)
+            else
+              klass.new(row).value
+            end
           end
         end
         datasources.each_pair do |att, rows|
