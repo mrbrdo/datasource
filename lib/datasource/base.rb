@@ -1,7 +1,7 @@
 module Datasource
   class Base
     class << self
-      attr_accessor :_attributes, :_change_scope, :_loaders
+      attr_accessor :_attributes, :_update_scope, :_loaders
       attr_accessor :adapter
 
       def inherited(base)
@@ -15,6 +15,7 @@ module Datasource
         self.send :include, @adapter
       end
 
+    private
       def attributes(*attrs)
         attrs.each { |name| attribute(name) }
       end
@@ -27,19 +28,27 @@ module Datasource
         @_attributes.push name: name.to_s, klass: klass, foreign_key: foreign_key.to_s, id_key: self::ID_KEY
       end
 
-      def change_scope(&block)
-        @_change_scope = block
+      def update_scope(&block)
+        @_update_scope = block
       end
 
       def loader(name, &block)
         @_loaders[name.to_sym] = block
       end
+
+      def group_by_column(column, rows, remove_column = false)
+        rows.inject({}) do |map, row|
+          map[row[column]] = row
+          row.delete(column) if remove_column
+          map
+        end
+      end
     end
 
     def initialize(scope)
       @scope =
-        if self.class._change_scope
-          self.class._change_scope.call(scope)
+        if self.class._update_scope
+          self.class._update_scope.call(scope)
         else
           scope
         end
@@ -99,23 +108,30 @@ module Datasource
 
       # TODO: field names...
       rows.each do |row|
+        # lazy load orm model only if used in computed attributes
+        orm_model = nil
+        get_orm_model = -> { orm_model ||= to_orm_object(row) }
+
+        row_computed = {}
         computed_expose_attributes.each do |att|
           klass = att[:klass]
           if klass
-            row[att[:name]] = if klass._depends.keys.include?(:loader)
+            row_computed[att[:name]] = if klass._depends.keys.include?(:loader)
               row_loader_results ||= Array(klass._depends[:loader]).map do |loader_name|
                 (loader_results[loader_name] ||= self.class._loaders[loader_name].call(rows, @scope))[row[self.class::ID_KEY]]
               end
-              p row_loader_results
-              klass.new(row).value(*row_loader_results)
+              klass.new(row, get_orm_model).value(*row_loader_results)
             else
-              klass.new(row).value
+              klass.new(row, get_orm_model).value
             end
           end
         end
+        row.merge!(row_computed)
+
         datasources.each_pair do |att, rows|
           row[att[:name]] = Array(rows[row[att[:id_key]]])
         end
+
         row.delete_if do |key, value|
           !attribute_exposed?(key)
         end

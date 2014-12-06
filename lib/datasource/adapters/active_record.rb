@@ -1,43 +1,5 @@
 require 'set'
-
-ActiveRecord::Calculations
-module ActiveRecord
-  module Calculations
-    def pluck_hash(*column_names)
-      column_names.map! do |column_name|
-        if column_name.is_a?(Symbol) && attribute_alias?(column_name)
-          attribute_alias(column_name)
-        else
-          column_name.to_s
-        end
-      end
-
-      if has_include?(column_names.first)
-        construct_relation_for_association_calculations.pluck(*column_names)
-      else
-        relation = spawn
-        relation.select_values = column_names.map { |cn|
-          columns_hash.key?(cn) ? arel_table[cn] : cn
-        }
-        result = klass.connection.select_all(relation.arel, nil, bind_values)
-        columns = result.columns.map do |key|
-          klass.column_types.fetch(key) {
-            result.column_types.fetch(key) { result.identity_type }
-          }
-        end
-
-        result.rows.map do |values|
-          {}.tap do |hash|
-            values.zip(columns, result.columns).each do |v|
-              single_attr_hash = { v[2] => v[0] }
-              hash[v[2]] = v[1].type_cast klass.initialize_attributes(single_attr_hash).values.first
-            end
-          end
-        end
-      end
-    end
-  end
-end
+require 'active_support/concern'
 
 module Datasource
   module Adapters
@@ -50,8 +12,16 @@ module Datasource
         end
       end
 
+      def orm_klass
+        @scope.klass
+      end
+
+      def to_orm_object(row)
+        orm_klass.new(row.select { |k, v| orm_klass.column_names.include?(k) }).freeze
+      end
+
       def get_rows(scope)
-        scope.pluck_hash(*get_select_values(scope))
+        scope_pluck_hash(scope, *get_select_values(scope))
       end
 
       def included_datasource_rows(att, datasource_data, rows)
@@ -124,6 +94,42 @@ module Datasource
         raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
 
+      def scope_pluck_hash(scope, *column_names)
+        scope.instance_exec do
+          column_names.map! do |column_name|
+            if column_name.is_a?(Symbol) && attribute_alias?(column_name)
+              attribute_alias(column_name)
+            else
+              column_name.to_s
+            end
+          end
+
+          if has_include?(column_names.first)
+            construct_relation_for_association_calculations.pluck(*column_names)
+          else
+            relation = spawn
+            relation.select_values = column_names.map { |cn|
+              columns_hash.key?(cn) ? arel_table[cn] : cn
+            }
+            result = klass.connection.select_all(relation.arel, nil, bind_values)
+            columns = result.columns.map do |key|
+              klass.column_types.fetch(key) {
+                result.column_types.fetch(key) { result.identity_type }
+              }
+            end
+
+            result.rows.map do |values|
+              {}.tap do |hash|
+                values.zip(columns, result.columns).each do |v|
+                  single_attr_hash = { v[2] => v[0] }
+                  hash[v[2]] = v[1].type_cast klass.initialize_attributes(single_attr_hash).values.first
+                end
+              end
+            end
+          end
+        end
+      end
+
       module DatasourceGenerator
         def From(*args)
           klass = args.first
@@ -135,6 +141,10 @@ module Datasource
             end
             Class.new(Datasource::Base) do
               attributes *column_names
+
+              define_method(:orm_klass) do
+                klass
+              end
 
               if assocs
                 klass.reflections.values.each do |reflection|

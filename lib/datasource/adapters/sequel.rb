@@ -9,6 +9,14 @@ module Datasource
         scope.sql
       end
 
+      def orm_klass
+        raise "Model class not set for #{self.name}. You should define it:\ndef orm_klass\n  Post\nend"
+      end
+
+      def to_orm_object(row)
+        orm_klass.new(row.select { |k,v| orm_klass.columns.include?(k.to_sym) && k != "id" })
+      end
+
       def get_rows(scope)
         # directly return hash from database instead of Sequel model
         scope.row_proc = ->(x) { x }
@@ -101,6 +109,10 @@ module Datasource
             end
             Class.new(Datasource::Base) do
               attributes *column_names
+
+              define_method(:orm_klass) do
+                klass
+              end
 
               if assocs
                 klass.associations.each do |association|
