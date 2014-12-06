@@ -1,118 +1,185 @@
 require 'set'
-
-ActiveRecord::Calculations
-module ActiveRecord
-  module Calculations
-    def pluck_hash(*column_names)
-      column_names.map! do |column_name|
-        if column_name.is_a?(Symbol) && attribute_alias?(column_name)
-          attribute_alias(column_name)
-        else
-          column_name.to_s
-        end
-      end
-
-      if has_include?(column_names.first)
-        construct_relation_for_association_calculations.pluck(*column_names)
-      else
-        relation = spawn
-        relation.select_values = column_names.map { |cn|
-          columns_hash.key?(cn) ? arel_table[cn] : cn
-        }
-        result = klass.connection.select_all(relation.arel, nil, bind_values)
-        columns = result.columns.map do |key|
-          klass.column_types.fetch(key) {
-            result.column_types.fetch(key) { result.identity_type }
-          }
-        end
-
-        result.rows.map do |values|
-          {}.tap do |hash|
-            values.zip(columns, result.columns).each do |v|
-              single_attr_hash = { v[2] => v[0] }
-              hash[v[2]] = v[1].type_cast klass.initialize_attributes(single_attr_hash).values.first
-            end
-          end
-        end
-      end
-    end
-  end
-end
+require 'active_support/concern'
 
 module Datasource
   module Adapters
     module ActiveRecord
-      ID_KEY = "id"
-
-      def to_query(scope)
-        ActiveRecord::Base.uncached do
-          scope.select(*get_select_values(scope)).to_sql
+      module ScopeExtensions
+        def use_datasource_serializer(value)
+          @datasource_serializer = value
+          self
         end
-      end
 
-      def get_rows(scope)
-        scope.pluck_hash(*get_select_values(scope))
-      end
+        def use_datasource(value)
+          @datasource = value
+          self
+        end
 
-      def included_datasource_rows(att, datasource_data, rows)
-        ds_select = datasource_data[:select]
-        unless ds_select.include?(att[:foreign_key])
-          ds_select += [att[:foreign_key]]
+        def datasource_select(*args)
+          @datasource_select = Array(@datasource_select) + args
+          self
         end
-        ds_scope = datasource_data[:scope]
-        column = "#{ds_scope.klass.table_name}.#{att[:foreign_key]}"
-        ds_scope = ds_scope.where("#{column} IN (?)",
-            rows.map { |row| row[att[:id_key]] })
-        grouped_results = att[:klass].new(ds_scope)
-        .select(ds_select)
-        .results.group_by do |row|
-          row[att[:foreign_key]]
-        end
-        unless datasource_data[:select].include?(att[:foreign_key])
-          grouped_results.each_pair do |k, rows|
-            rows.each do |row|
-              row.delete(att[:foreign_key])
+
+        def to_a
+          if @datasource
+            datasource = @datasource.new(self)
+            datasource.select(*Array(@datasource_select))
+            if @datasource_serializer
+              select = []
+              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer)
+
+              datasource.select(*select)
             end
+
+            datasource.results
+          else
+            super
           end
         end
-        grouped_results
       end
 
-      def get_select_values(scope)
-        select_values = Set.new
-        select_values.add("#{scope.klass.table_name}.#{self.class.adapter::ID_KEY}")
+      module Model
+        extend ActiveSupport::Concern
 
-        self.class._attributes.each do |att|
-          if attribute_exposed?(att[:name])
-            if att[:klass] == nil
-              select_values.add("#{scope.klass.table_name}.#{att[:name]}")
-            elsif att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-              att[:klass]._depends.keys.map(&:to_s).each do |name|
-                next if name == scope.klass.table_name
-                next if name == "loader"
-                ensure_table_join!(scope, name, att)
-              end
-              att[:klass]._depends.each_pair do |table, names|
-                next if table.to_sym == :loader
-                Array(names).each do |name|
-                  select_values.add("#{table}.#{name}")
-                end
-                # TODO: handle depends on virtual attribute
-              end
-            elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
-              select_values.add("(#{att[:klass].new.select_value}) as #{att[:name]}")
-              att[:klass]._depends.each do |name|
-                next if name == scope.klass.table_name
-                ensure_table_join!(scope, name, att)
-              end
+        included do
+          attr_accessor :loaded_values
+        end
+
+        module ClassMethods
+          def for_serializer(serializer = nil)
+            scope = if all.respond_to?(:use_datasource_serializer)
+              all
+            else
+              all.extending(ScopeExtensions).use_datasource(default_datasource)
             end
+            scope.use_datasource_serializer(serializer || Datasource::Base.consumer_adapter.get_serializer_for(Adapters::ActiveRecord.scope_to_class(scope)))
+          end
+
+          def with_datasource(datasource = nil)
+            scope = if all.respond_to?(:use_datasource)
+              all
+            else
+              all.extending(ScopeExtensions)
+            end
+            scope.use_datasource(datasource || default_datasource)
+          end
+
+          def default_datasource
+            @default_datasource ||= Class.new(Datasource::From(self))
+          end
+
+          def datasource_module(&block)
+            default_datasource.instance_exec(&block)
           end
         end
-        select_values.to_a
       end
 
-      def ensure_table_join!(scope, name, att)
-        join_value = scope.joins_values.find do |value|
+      def self.association_reflection(klass, name)
+        if reflection = klass.reflections[name]
+          {
+            klass: reflection.klass,
+            macro: reflection.macro,
+            foreign_key: reflection.try(:foreign_key)
+          }
+        end
+      end
+
+      def self.get_table_name(klass)
+        klass.table_name.to_sym
+      end
+
+      def self.is_scope?(obj)
+        obj.kind_of?(::ActiveRecord::Relation)
+      end
+
+      def self.scope_to_class(scope)
+        scope.klass
+      end
+
+      def self.association_klass(reflection)
+        if reflection.macro == :belongs_to && reflection.options[:polymorphic]
+          fail Datasource::Error, "polymorphic belongs_to not supported, write custom loader"
+        else
+          reflection.klass
+        end
+      end
+
+      def self.preload_association(records, name)
+        return if records.empty?
+        return if records.first.association(name.to_sym).loaded?
+        klass = records.first.class
+        if reflection = klass.reflections[name.to_sym]
+          assoc_class = association_klass(reflection)
+          datasource_class = assoc_class.default_datasource
+          # TODO: extract serializer_class from parent serializer association
+          serializer_class = Datasource::Base.consumer_adapter.get_serializer_for(assoc_class)
+
+          # TODO: can we make it use datasource scope (with_serializer)? like Sequel
+          scope = assoc_class.all
+          datasource = datasource_class.new(scope)
+          datasource_select = serializer_class._attributes.dup
+          Datasource::Base.reflection_select(Adapters::ActiveRecord.association_reflection(klass, name.to_sym), [], datasource_select)
+          datasource.select(*datasource_select)
+          select_values = datasource.get_select_values
+
+          begin
+            ::ActiveRecord::Associations::Preloader
+              .new.preload(records, name, assoc_class.select(*select_values))
+          rescue ArgumentError
+            ::ActiveRecord::Associations::Preloader
+              .new(records, name, assoc_class.select(*select_values)).run
+          end
+
+          assoc_records = records.flat_map { |record| record.send(name) }.compact
+          serializer_class._associations.each_pair do |assoc_name, options|
+            preload_association(assoc_records, assoc_name)
+          end
+          datasource.results(assoc_records)
+        end
+      rescue Exception => ex
+        if ex.is_a?(SystemStackError) || ex.is_a?(Datasource::RecursionError)
+          fail Datasource::RecursionError, "recursive association (involving #{name})"
+        else
+          raise
+        end
+      end
+
+      def to_query
+        ::ActiveRecord::Base.uncached do
+          @scope.select(*get_select_values).to_sql
+        end
+      end
+
+      def select_scope
+        @scope.select(*get_select_values)
+      end
+
+      def get_rows
+        append_select = []
+        @expose_associations.each_pair do |assoc_name, assoc_select|
+          if reflection = Adapters::ActiveRecord.association_reflection(self.class.orm_klass, assoc_name.to_sym)
+            Datasource::Base.reflection_select(reflection, append_select, [])
+          end
+        end
+        select(*append_select)
+
+        scope = select_scope
+        if scope.respond_to?(:use_datasource)
+          scope = scope.spawn.use_datasource(nil)
+        end
+        scope.to_a.tap do |records|
+          @expose_associations.each_pair do |assoc_name, assoc_select|
+            Adapters::ActiveRecord.preload_association(records, assoc_name)
+          end
+        end
+      end
+
+      def primary_scope_table(scope)
+        scope.klass.table_name
+      end
+
+      def ensure_table_join!(name, att)
+        join_value = @scope.joins_values.find do |value|
           if value.is_a?(Symbol)
             value.to_s == att[:name]
           elsif value.is_a?(String)
@@ -121,38 +188,22 @@ module Datasource
             end
           end
         end
-        raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
+        fail Datasource::Error, "given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
 
       module DatasourceGenerator
-        def From(*args)
-          klass = args.first
+        def From(klass)
           if klass.ancestors.include?(::ActiveRecord::Base)
-            assocs = args[1] || false
-            skip = (args[2] || []).map(&:to_s)
-            column_names = klass.column_names.reject do |name|
-              skip.include?(name)
-            end
             Class.new(Datasource::Base) do
-              attributes *column_names
+              attributes *klass.column_names
+              associations *klass.reflections.keys
 
-              if assocs
-                klass.reflections.values.each do |reflection|
-                  next if skip.include?(reflection.name.to_s)
-                  if reflection.macro == :has_many
-                    ds_name = "#{reflection.klass.name.pluralize}Datasource"
-                    begin
-                      ds_name.constantize
-                    rescue NameError
-                      begin
-                        Object.const_set(ds_name, Datasource.From(reflection.klass))
-                      rescue SystemStackError
-                        fail "Circular reference between #{klass.name} and #{reflection.klass.name}, create Datasets manually"
-                      end
-                    end
-                    includes_many reflection.name, ds_name.constantize, reflection.foreign_key
-                  end
-                end
+              define_singleton_method(:orm_klass) do
+                klass
+              end
+
+              define_method(:primary_key) do
+                klass.primary_key.to_sym
               end
             end
           else
@@ -164,4 +215,10 @@ module Datasource
   end
 
   extend Adapters::ActiveRecord::DatasourceGenerator
+end
+
+if not(::ActiveRecord::Base.respond_to?(:datasource_module))
+  class ::ActiveRecord::Base
+    include Datasource::Adapters::ActiveRecord::Model
+  end
 end

@@ -3,123 +3,183 @@ require 'set'
 module Datasource
   module Adapters
     module Sequel
-      ID_KEY = "id"
+      module ScopeExtensions
+        def use_datasource_serializer(value)
+          @datasource_serializer = value
+          self
+        end
+
+        def use_datasource(value)
+          @datasource = value
+          self
+        end
+
+        def datasource_select(*args)
+          @datasource_select = Array(@datasource_select) + args
+          self
+        end
+
+        def each(&block)
+          if @datasource
+            datasource = @datasource.new(self)
+            datasource.select(*Array(@datasource_select))
+            if @datasource_serializer
+              select = []
+              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer)
+
+              datasource.select(*select)
+            end
+
+            datasource.results.each(&block)
+          else
+            super
+          end
+        end
+      end
+
+      module Model
+        extend ActiveSupport::Concern
+
+        included do
+          attr_accessor :loaded_values
+
+          dataset_module do
+            def for_serializer(serializer = nil)
+              scope = if respond_to?(:use_datasource_serializer)
+                self
+              else
+                self.extend(ScopeExtensions).use_datasource(default_datasource)
+              end
+              scope.use_datasource_serializer(serializer || Datasource::Base.consumer_adapter.get_serializer_for(Adapters::Sequel.scope_to_class(scope)))
+            end
+
+            def with_datasource(datasource = nil)
+              scope = if respond_to?(:use_datasource)
+                self
+              else
+                self.extend(ScopeExtensions)
+              end
+              scope.use_datasource(datasource || default_datasource)
+            end
+          end
+        end
+
+        module ClassMethods
+          def default_datasource
+            @default_datasource ||= Class.new(Datasource::From(self))
+          end
+
+          def datasource_module(&block)
+            default_datasource.instance_exec(&block)
+          end
+        end
+      end
+
+      def self.association_reflection(klass, name)
+        reflection = klass.association_reflections[name]
+
+        macro = case reflection[:type]
+        when :many_to_one then :belongs_to
+        when :one_to_many then :has_many
+        when :one_to_one then :has_one
+        else
+          fail Datasource::Error, "unimplemented association type #{reflection[:type]} - TODO"
+        end
+        {
+          klass: reflection[:cache][:class] || reflection[:class_name].constantize,
+          macro: macro,
+          foreign_key: reflection[:key].try!(:to_s)
+        }
+      end
+
+      def self.get_table_name(klass)
+        klass.table_name
+      end
+
+      def self.is_scope?(obj)
+        obj.kind_of?(::Sequel::Dataset)
+      end
+
+      def self.scope_to_class(scope)
+        if scope.row_proc && scope.row_proc.ancestors.include?(::Sequel::Model)
+          scope.row_proc
+        else
+          fail Datasource::Error, "unable to determine model for scope"
+        end
+      end
 
       def to_query(scope)
         scope.sql
       end
 
-      def get_rows(scope)
-        # directly return hash from database instead of Sequel model
-        scope.row_proc = ->(x) { x }
-        scope.select(*get_sequel_select_values(scope)).to_a.map(&:stringify_keys)
+      def select_scope
+        @scope.select(*get_sequel_select_values)
       end
 
-      # not ORM-specific
-      def included_datasource_rows(att, datasource_data, rows)
-        ds_select = datasource_data[:select]
-        unless ds_select.include?(att[:foreign_key])
-          ds_select += [att[:foreign_key]]
+      def get_rows
+        eager = {}
+        append_select = []
+        @expose_associations.each_pair do |assoc_name, assoc_select|
+          eager.merge!(
+            get_assoc_eager_options(self.class.orm_klass, assoc_name.to_sym, assoc_select, append_select))
         end
-        ds_scope = datasource_data[:scope]
-        column = "#{primary_scope_table(ds_scope)}.#{att[:foreign_key]}"
-        ds_scope = ds_scope.where("#{column} IN (?)",
-            rows.map { |row| row[att[:id_key]] })
-        grouped_results = att[:klass].new(ds_scope)
-        .select(ds_select)
-        .results.group_by do |row|
-          row[att[:foreign_key]]
+        # TODO: remove/disable datasource on scope if present
+        scope = select_scope
+        if scope.respond_to?(:use_datasource)
+          scope = scope.clone.use_datasource(nil)
         end
-        unless datasource_data[:select].include?(att[:foreign_key])
-          grouped_results.each_pair do |k, rows|
-            rows.each do |row|
-              row.delete(att[:foreign_key])
-            end
-          end
-        end
-        grouped_results
+        scope
+        .select_append(*get_sequel_select_values(append_select.map { |v| primary_scope_table(@scope) + ".#{v}" }))
+        .eager(eager).all
       end
 
-      def get_sequel_select_values(scope)
-        get_select_values(scope).map { |str| ::Sequel.lit(str) }
+      def get_assoc_eager_options(klass, name, assoc_select, append_select)
+        if reflection = Adapters::Sequel.association_reflection(klass, name)
+          self_append_select = []
+          Datasource::Base.reflection_select(reflection, append_select, self_append_select)
+          assoc_class = reflection[:klass]
+
+          datasource_class = assoc_class.default_datasource
+
+          {
+            name => ->(ds) {
+              ds.with_datasource(datasource_class)
+              .datasource_select(*(self_append_select + assoc_select))
+            }
+          }
+        else
+          {}
+        end
       end
 
-      # not ORM-specific
-      def get_select_values(scope)
-        scope_table = primary_scope_table(scope)
-        select_values = Set.new
-        select_values.add("#{scope_table}.#{self.class.adapter::ID_KEY}")
-
-        self.class._attributes.each do |att|
-          if attribute_exposed?(att[:name])
-            if att[:klass] == nil
-              select_values.add("#{scope_table}.#{att[:name]}")
-            elsif att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-              att[:klass]._depends.keys.map(&:to_s).each do |name|
-                next if name == scope_table
-                next if name == "loader"
-                ensure_table_join!(scope, name, att)
-              end
-              att[:klass]._depends.each_pair do |table, names|
-                next if table.to_sym == :loader
-                Array(names).each do |name|
-                  select_values.add("#{table}.#{name}")
-                end
-                # TODO: handle depends on virtual attribute
-              end
-            elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
-              select_values.add("(#{att[:klass].new.select_value}) as #{att[:name]}")
-              att[:klass]._depends.each do |name|
-                next if name == scope_table
-                ensure_table_join!(scope, name, att)
-              end
-            end
-          end
-        end
-        select_values.to_a
+      def get_sequel_select_values(values = nil)
+        (values || get_select_values).map { |str| ::Sequel.lit(str) }
       end
 
       def primary_scope_table(scope)
         scope.first_source_alias.to_s
       end
 
-      def ensure_table_join!(scope, name, att)
-        join_value = Hash(scope.opts[:join]).find do |value|
+      def ensure_table_join!(name, att)
+        join_value = Hash(@scope.opts[:join]).find do |value|
           (value.table_alias || value.table).to_s == att[:name]
         end
-        raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
+        fail Datasource::Error, "given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
 
       module DatasourceGenerator
-        def From(*args)
-          klass = args.first
+        def From(klass)
           if klass.ancestors.include?(::Sequel::Model)
-            assocs = args[1] || false
-            skip = (args[2] || []).map(&:to_s)
-            column_names = klass.columns.reject do |name|
-              skip.include?(name.to_s)
-            end
             Class.new(Datasource::Base) do
-              attributes *column_names
+              attributes *klass.columns
+              associations *klass.associations
 
-              if assocs
-                klass.associations.each do |association|
-                  reflection = klass.association_reflection(association)
-                  next if skip.include?(reflection[:name].to_s)
-                  if reflection[:type] == :many_to_many
-                    ds_name = "#{reflection[:model].name.pluralize}Datasource"
-                    begin
-                      ds_name.constantize
-                    rescue NameError
-                      begin
-                        Object.const_set(ds_name, Datasource.From(reflection[:model]))
-                      rescue SystemStackError
-                        fail "Circular reference between #{klass.name} and #{reflection[:model].name}, create Datasets manually"
-                      end
-                    end
-                    includes_many reflection[:name], ds_name.constantize, reflection[:key]
-                  end
-                end
+              define_singleton_method(:orm_klass) do
+                klass
+              end
+
+              define_method(:primary_key) do
+                klass.primary_key
               end
             end
           else
@@ -131,4 +191,10 @@ module Datasource
   end
 
   extend Adapters::Sequel::DatasourceGenerator
+end
+
+if not(::Sequel::Model.respond_to?(:datasource_module))
+  class ::Sequel::Model
+    include Datasource::Adapters::Sequel::Model
+  end
 end

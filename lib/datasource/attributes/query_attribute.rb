@@ -16,11 +16,16 @@ module Datasource
   end
 
   class Datasource::Base
-    def self.query(name, deps, &block)
+  private
+    def self.query(name, deps = nil, value = nil, &block)
       klass = Class.new(Attributes::QueryAttribute) do
-        depends deps
+        depends deps if deps
 
-        define_method(:select_value, &block)
+        if block
+          define_singleton_method(:select_value, &block)
+        else
+          define_singleton_method(:select_value) { value }
+        end
       end
       attribute name, klass
     end

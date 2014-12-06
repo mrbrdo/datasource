@@ -11,30 +11,26 @@ module Datasource
         def depends(*args)
           args.each do |dep|
             _depends.deep_merge!(dep)
-            dep.values.each do |names|
-              Array(names).each do |name|
-                define_method(name) do
-                  @depend_values[name.to_s]
-                end
-              end
-            end
           end
         end
-      end
-
-      def initialize(depend_values)
-        @depend_values = depend_values
       end
     end
   end
 
   class Datasource::Base
-    def self.computed(name, deps, &block)
-      klass = Class.new(Attributes::ComputedAttribute) do
-        depends deps
-
-        define_method(:value, &block)
+  private
+    def self.computed(name, *_deps)
+      deps = _deps.select { |dep| dep.kind_of?(Hash) }
+      _deps.reject! { |dep| dep.kind_of?(Hash) }
+      unless _deps.empty?
+        self_key = adapter.get_table_name(orm_klass)
+        deps.push(self_key => _deps)
       end
+
+      klass = Class.new(Attributes::ComputedAttribute) do
+        depends *deps
+      end
+
       attribute name, klass
     end
   end
