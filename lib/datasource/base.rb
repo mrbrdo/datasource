@@ -2,17 +2,24 @@ module Datasource
   class Base
     class << self
       attr_accessor :_attributes, :_update_scope, :_loaders
-      attr_accessor :adapter
+      attr_writer :orm_klass
 
       def inherited(base)
-        base._attributes = (_attributes || []).dup
+        base._attributes = (_attributes || {}).dup
         base._loaders = (_loaders || {}).dup
+        self.send :include, adapter
+      end
+
+      def adapter
         @adapter ||= if defined? ActiveRecord
           Datasource::Adapters::ActiveRecord
         elsif defined? Sequel
           Datasource::Adapters::Sequel
         end
-        self.send :include, @adapter
+      end
+
+      def orm_klass
+        fail Datasource::Error, "Model class not set for #{name}. You should define it:\nclass YourDatasource\n  @orm_klass = MyModelClass\nend"
       end
 
     private
@@ -21,19 +28,13 @@ module Datasource
       end
 
       def attribute(name, klass = nil)
-        @_attributes.push name: name.to_s, klass: klass
-      end
-
-      def includes_many(name, klass, foreign_key)
-        @_attributes.push name: name.to_s, klass: klass, foreign_key: foreign_key.to_s, id_key: self::ID_KEY
+        att = { name: name.to_s, klass: klass }
+        @_attributes[att[:name]] = att
       end
 
       def update_scope(&block)
+        # TODO: careful about scope module extension, to_a infinite recursion
         @_update_scope = block
-      end
-
-      def loader(name, &block)
-        @_loaders[name.to_sym] = block
       end
 
       def group_by_column(column, rows, remove_column = false)
@@ -53,21 +54,13 @@ module Datasource
           scope
         end
       @expose_attributes = []
-      @datasource_data = {}
+    end
+
+    def primary_key
+      :id
     end
 
     def select(*names)
-      names = names.flat_map do |name|
-        if name.kind_of?(Hash)
-          # datasource data
-          name.each_pair do |k, v|
-            @datasource_data[k.to_s] = v
-          end
-          name.keys
-        else
-          name
-        end
-      end
       @expose_attributes = (@expose_attributes + names.map(&:to_s)).uniq
       self
     end
@@ -76,64 +69,35 @@ module Datasource
       @expose_attributes.include?(name)
     end
 
-    def to_query
-      to_query(@scope)
-    end
-
-    def results
-      rows = get_rows(@scope)
-
-      attribute_map = self.class._attributes.inject({}) do |hash, att|
-        hash[att[:name]] = att
-        hash
-      end
-
-      computed_expose_attributes = []
-      datasources = {}
+    def results(rows = nil)
+      rows ||= get_rows
 
       @expose_attributes.each do |name|
-        att = attribute_map[name]
+        att = self.class._attributes[name]
+        fail Datasource::Error, "attribute #{name} doesn't exist, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" unless att
         klass = att[:klass]
         next unless klass
 
-        if klass.ancestors.include?(Attributes::ComputedAttribute)
-          computed_expose_attributes.push(att)
-        elsif klass.ancestors.include?(Base)
-          datasources[att] =
-            included_datasource_rows(att, @datasource_data[att[:name]], rows)
-        end
-      end
-
-      loader_results = {}
-
-      # TODO: field names...
-      rows.each do |row|
-        # lazy load orm model only if used in computed attributes
-        orm_model = nil
-        get_orm_model = -> { orm_model ||= to_orm_object(row) }
-
-        row_computed = {}
-        computed_expose_attributes.each do |att|
-          klass = att[:klass]
-          if klass
-            row_computed[att[:name]] = if klass._depends.keys.include?(:loader)
-              row_loader_results ||= Array(klass._depends[:loader]).map do |loader_name|
-                (loader_results[loader_name] ||= self.class._loaders[loader_name].call(rows, @scope))[row[self.class::ID_KEY]]
+        if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
+          loaders = att[:klass]._depends[:loaders]
+          if loaders
+            Array(loaders).each do |name|
+              if loader = self.class._loaders[name]
+                if loaded_values = loader.load(rows.map(&primary_key), rows, @scope)
+                  unless rows.first.loaded_values
+                    rows.each do |row|
+                      row.loaded_values = {}
+                    end
+                  end
+                  rows.each do |row|
+                    row.loaded_values[name] = loaded_values[row.send(primary_key)]
+                  end
+                end
+              else
+                raise Datasource::Error, "loader with name :#{name} could not be found"
               end
-              klass.new(row, get_orm_model).value(*row_loader_results)
-            else
-              klass.new(row, get_orm_model).value
             end
           end
-        end
-        row.merge!(row_computed)
-
-        datasources.each_pair do |att, rows|
-          row[att[:name]] = Array(rows[row[att[:id_key]]])
-        end
-
-        row.delete_if do |key, value|
-          !attribute_exposed?(key)
         end
       end
 

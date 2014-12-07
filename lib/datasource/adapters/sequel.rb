@@ -9,14 +9,6 @@ module Datasource
         scope.sql
       end
 
-      def orm_klass
-        raise "Model class not set for #{self.name}. You should define it:\ndef orm_klass\n  Post\nend"
-      end
-
-      def to_orm_object(row)
-        orm_klass.new(row.select { |k,v| orm_klass.columns.include?(k.to_sym) && k != "id" })
-      end
-
       def get_rows(scope)
         # directly return hash from database instead of Sequel model
         scope.row_proc = ->(x) { x }
@@ -49,16 +41,16 @@ module Datasource
       end
 
       def get_sequel_select_values(scope)
-        get_select_values(scope).map { |str| ::Sequel.lit(str) }
+        get_select_values.map { |str| ::Sequel.lit(str) }
       end
 
       # not ORM-specific
-      def get_select_values(scope)
-        scope_table = primary_scope_table(scope)
+      def get_select_values
+        scope_table = primary_scope_table(@scope)
         select_values = Set.new
         select_values.add("#{scope_table}.#{self.class.adapter::ID_KEY}")
 
-        self.class._attributes.each do |att|
+        self.class._attributes.values.each do |att|
           if attribute_exposed?(att[:name])
             if att[:klass] == nil
               select_values.add("#{scope_table}.#{att[:name]}")
@@ -66,7 +58,7 @@ module Datasource
               att[:klass]._depends.keys.map(&:to_s).each do |name|
                 next if name == scope_table
                 next if name == "loader"
-                ensure_table_join!(scope, name, att)
+                ensure_table_join!(@scope, name, att)
               end
               att[:klass]._depends.each_pair do |table, names|
                 next if table.to_sym == :loader
@@ -76,10 +68,10 @@ module Datasource
                 # TODO: handle depends on virtual attribute
               end
             elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
-              select_values.add("(#{att[:klass].new.select_value}) as #{att[:name]}")
+              select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
               att[:klass]._depends.each do |name|
                 next if name == scope_table
-                ensure_table_join!(scope, name, att)
+                ensure_table_join!(@scope, name, att)
               end
             end
           end
@@ -95,7 +87,7 @@ module Datasource
         join_value = Hash(scope.opts[:join]).find do |value|
           (value.table_alias || value.table).to_s == att[:name]
         end
-        raise "Given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
+        fail Datasource::Error, "given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
       end
 
       module DatasourceGenerator
@@ -110,7 +102,7 @@ module Datasource
             Class.new(Datasource::Base) do
               attributes *column_names
 
-              define_method(:orm_klass) do
+              def orm_klass
                 klass
               end
 

@@ -16,18 +16,4 @@ ActiveRecord::Schema.define(:version => 0) do
   end
 end
 
-class Blog < ActiveRecord::Base
-  self.table_name = "blogs"
-  has_many :posts
-end
-
-class Post < ActiveRecord::Base
-  self.table_name = "posts"
-  belongs_to :blog
-  has_many :comments
-end
-
-class Comment < ActiveRecord::Base
-  self.table_name = "comments"
-  belongs_to :post
-end
+ActiveRecord::Base.send :include, Datasource::Adapters::ActiveRecord::Model
