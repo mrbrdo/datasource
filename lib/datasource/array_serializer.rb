@@ -9,12 +9,13 @@ module Datasource
   class ArraySerializer < superclass
     def initialize(objects, options = {})
       datasource_class = options.delete(:datasource)
-      if @objects = objects.kind_of?(ActiveRecord::Relation)
-        datasource_class ||= objects.klass.default_datasource
+      adapter = Datasource::Base.adapter
+      if adapter.is_scope?(objects)
+        datasource_class ||= adapter.scope_to_class(objects).default_datasource
 
         records = objects
           .with_datasource(datasource_class)
-          .for_serializer(options[:serializer]).to_a
+          .for_serializer(options[:serializer]).all.to_a # all needed for Sequel eager loading
 
         super(records, options)
       else

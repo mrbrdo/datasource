@@ -27,6 +27,7 @@ module Datasource
             # TODO: extract serializer_class from parent serializer association
             serializer_class = ScopeExtensions.get_serializer_for(assoc_class)
 
+            # TODO: can we make it use datasource scope (with_serializer)? like Sequel
             scope = assoc_class.all
             datasource = datasource_class.new(scope)
             datasource.select(*serializer_class._attributes)
@@ -46,8 +47,8 @@ module Datasource
             end
           end
         rescue Exception => ex
-          if ex.is_a?(SystemStackError) || ex.is_a?(Datasource::Error)
-            fail Datasource::Error, "recursive association (involving #{name})"
+          if ex.is_a?(SystemStackError) || ex.is_a?(Datasource::RecursionError)
+            fail Datasource::RecursionError, "recursive association (involving #{name})"
           else
             raise
           end
@@ -112,7 +113,15 @@ module Datasource
       end
 
       def self.get_table_name(klass)
-        klass.table_name
+        klass.table_name.to_sym
+      end
+
+      def self.is_scope?(obj)
+        obj.kind_of?(ActiveRecord::Relation)
+      end
+
+      def self.scope_to_class(scope)
+        scope.klass
       end
 
       def to_query
@@ -227,4 +236,12 @@ module Datasource
   end
 
   extend Adapters::ActiveRecord::DatasourceGenerator
+end
+
+ActiveSupport.on_load :active_record do
+  if not(::ActiveRecord::Base.respond_to?(:datasource_module))
+    class ::ActiveRecord::Base
+      include Datasource::Adapters::ActiveRecord::Model
+    end
+  end
 end

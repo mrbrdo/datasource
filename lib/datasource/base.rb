@@ -66,7 +66,7 @@ module Datasource
     end
 
     def attribute_exposed?(name)
-      @expose_attributes.include?(name)
+      @expose_attributes.include?(name.to_s)
     end
 
     def results(rows = nil)
@@ -74,7 +74,7 @@ module Datasource
 
       @expose_attributes.each do |name|
         att = self.class._attributes[name]
-        fail Datasource::Error, "attribute #{name} doesn't exist, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" unless att
+        fail Datasource::Error, "attribute #{name} doesn't exist for #{self.class.orm_klass.name}, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" unless att
         klass = att[:klass]
         next unless klass
 

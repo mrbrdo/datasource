@@ -1,5 +1,6 @@
 module Datasource
   Error = Class.new(StandardError)
+  RecursionError = Class.new(StandardError)
 end
 
 require 'datasource/base'
