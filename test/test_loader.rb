@@ -16,6 +16,7 @@ class LoaderTest < ActiveSupport::TestCase
         Comment.for_serializer.where(post_id: post_ids)
           .group("post_id")
           .having("id = MAX(id)")
+          .datasource_select(:post_id)
       end
 
       loader :newest_comment_text, array_to_hash: true do |post_ids|
@@ -28,6 +29,7 @@ class LoaderTest < ActiveSupport::TestCase
       loader :ordered_comments, group_by: :post_id do |post_ids|
         Comment.for_serializer(CommentSerializer).where(post_id: post_ids)
           .order("post_id, id desc")
+          .datasource_select(:post_id)
       end
 
       computed :newest_comment, loaders: :newest_comment
@@ -61,13 +63,13 @@ class LoaderTest < ActiveSupport::TestCase
     end
   end
 
-  def test_scope
+  def test_loader
     post = Post.create! title: "First Post"
     2.times { |i| post.comments.create! comment: "Comment #{i+1}" }
 
     assert_query_count(4) do
       assert_equal Datasource::ArrayAMS.new(Post.all).as_json,
-        [{:id=>1, :title=>"First Post", :newest_comment=>{"comment"=>{:id=>2, :comment=>"Comment 2", :post_id=>1}}, :newest_comment_text=>"Comment 2", :ordered_comments=>[{:id=>2, :comment=>"Comment 2", :post_id=>1}, {:id=>1, :comment=>"Comment 1", :post_id=>1}]}]
+        [{:id=>1, :title=>"First Post", :newest_comment=>{"comment"=>{:id=>2, :comment=>"Comment 2"}}, :newest_comment_text=>"Comment 2", :ordered_comments=>[{:id=>2, :comment=>"Comment 2"}, {:id=>1, :comment=>"Comment 1"}]}]
     end
   end
 
