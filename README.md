@@ -2,6 +2,22 @@
 
 Automatically preload your ORM records for your serializer.
 
+## Install
+
+Add to Gemfile
+
+```
+gem 'datasource'
+```
+
+And `bundle install`.
+
+Run install generator:
+
+```
+rails g datasource:install
+```
+
 ### ORM support
 
 - ActiveRecord
