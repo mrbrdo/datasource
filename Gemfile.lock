@@ -2,8 +2,7 @@ PATH
   remote: .
   specs:
     datasource (0.0.1)
-      active_model_serializers
-      activerecord (~> 4)
+      active_model_serializers (>= 0.9)
 
 GEM
   remote: https://rubygems.org/
@@ -43,6 +42,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  activerecord (~> 4)
   activesupport (~> 4)
   datasource!
   pry (~> 0.9)

@@ -17,9 +17,9 @@ module Datasource
 
   class Datasource::Base
   private
-    def self.query(name, deps, value = nil, &block)
+    def self.query(name, deps = nil, value = nil, &block)
       klass = Class.new(Attributes::QueryAttribute) do
-        depends deps
+        depends deps if deps
 
         if block
           define_singleton_method(:select_value, &block)

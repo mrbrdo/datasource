@@ -13,8 +13,11 @@ def assert_query_count(count)
   old_logger = ActiveRecord::Base.logger
   logger = StringIO.new
   ActiveRecord::Base.logger = Logger.new(logger)
-  yield
-  ActiveRecord::Base.logger = old_logger
-  # puts logger.string
+  begin
+    yield
+  ensure
+    ActiveRecord::Base.logger = old_logger
+    puts logger.string
+  end
   assert_equal count, logger.string.lines.count
 end

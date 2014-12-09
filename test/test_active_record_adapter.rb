@@ -62,7 +62,7 @@ class ActiveRecordAdapterTest < ActiveSupport::TestCase
     post = blog.posts.create! author_first_name: "First", author_last_name: "Last"
     2.times { post.comments.create! comment: "Comment" }
     assert_query_count(3) do
-      assert_equal Datasource::ArraySerializer.new(TestBlog.all).as_json,
+      assert_equal Datasource::ArrayAMS.new(TestBlog.all).as_json,
         [{:id=>1, :title=>"Blog 1", :posts=>[{:id=>1, :author_first_name=>"First", :author_full_name=>"First Last", :name_initials=>"FL", :blog_id=>1, :comments=>[{:id=>1, :post_id=>1}, {:id=>2, :post_id=>1}], :blog=>{:id=>1, :title=>"Blog 1"}}]}]
     end
   end

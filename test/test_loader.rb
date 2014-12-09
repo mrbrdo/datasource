@@ -59,7 +59,7 @@ class LoaderTest < ActiveSupport::TestCase
     end
 
     def ordered_comments
-      Datasource::ArraySerializer.new(object.loaded_values[:ordered_comments]).as_json
+      Datasource::ArrayAMS.new(object.loaded_values[:ordered_comments]).as_json
     end
   end
 
@@ -68,7 +68,7 @@ class LoaderTest < ActiveSupport::TestCase
     2.times { |i| post.comments.create! comment: "Comment #{i+1}" }
 
     assert_query_count(4) do
-      assert_equal Datasource::ArraySerializer.new(Post.all).as_json,
+      assert_equal Datasource::ArrayAMS.new(Post.all).as_json,
         [{:id=>1, :title=>"First Post", :newest_comment=>{"comment"=>{:id=>2, :comment=>"Comment 2", :post_id=>1}}, :newest_comment_text=>"Comment 2", :ordered_comments=>[{:id=>2, :comment=>"Comment 2", :post_id=>1}, {:id=>1, :comment=>"Comment 1", :post_id=>1}]}]
     end
   end
