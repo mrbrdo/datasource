@@ -167,6 +167,7 @@ module Datasource
         if scope.respond_to?(:use_datasource)
           scope = scope.spawn.use_datasource(nil)
         end
+        scope.includes_values = []
         scope.to_a.tap do |records|
           @expose_associations.each_pair do |assoc_name, assoc_select|
             Adapters::ActiveRecord.preload_association(records, assoc_name)
