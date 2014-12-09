@@ -1,9 +1,9 @@
 Gem::Specification.new do |s|
   s.name               = "datasource"
-  s.version            = "0.0.1"
+  s.version            = "0.0.2"
 
   s.authors = ["Jan Berdajs"]
-  s.date = %q{2014-11-08}
+  s.date = %q{2014-12-09}
   s.email       = ["mrbrdo@gmail.com"]
   s.homepage    = "https://github.com/mrbrdo/datasource"
   s.files = Dir["{app,config,db,lib}/**/*"] + ["MIT-LICENSE", "Rakefile", "README.md"]
