@@ -132,7 +132,7 @@ The loader will receive ids of the records, and you need to return a hash with y
 The key of the hash must be the id of the record for which the data is.
 
 A loader will only be executed if a computed attribute depends on it. If an attribute depends
-on multiple loaders, pass it an array.
+on multiple loaders, pass an array of loaders like so `computed :attr, loaders: [:loader1, :loader2]`.
 
 Be careful that if your hash does not contain a value for the object ID, the loaded value
 will be nil.
@@ -141,16 +141,11 @@ will be nil.
 class User < ActiveRecord::Base
   datasource_module do
     computed :post_count, loaders: :post_counts
-    loader :post_counts do |user_ids|
+    loader :post_counts, array_to_hash: true do |user_ids|
       results = Post
         .where(user_id: user_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
-
-      results.inject({}) do |hash, result|
-        hash[result[0]] = result[1]
-        hash
-      end
     end
   end
 end
@@ -197,16 +192,5 @@ loader :stuff, group_by: "user_id", one: true do |ids|
   [{ "title" => "Something", "user_id" => 10 }]
   # will be transformed into
   # { 10 => { "title" => "Something", "user_id" => 10 } }
-end
-```
-
-So you could simplify the loader from the first example:
-
-```ruby
-loader :post_counts, array_to_hash: true do |user_ids|
-  results = Post
-    .where(user_id: user_ids)
-    .group(:user_id)
-    .pluck("user_id, COUNT(id)")
 end
 ```
