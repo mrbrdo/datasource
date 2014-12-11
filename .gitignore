@@ -1,1 +1,3 @@
 datasource-*.gem
+.ruby-gemset
+.ruby-version
