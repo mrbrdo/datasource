@@ -8,7 +8,7 @@ require 'datasource'
 require 'active_model_serializers'
 require 'pry'
 
-Datasource.load(:activerecord)
+Datasource.load(:activerecord, :ams)
 
 # Load support files
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each { |f| require f }
