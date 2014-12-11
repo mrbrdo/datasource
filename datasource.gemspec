@@ -13,6 +13,7 @@ Gem::Specification.new do |s|
   s.licenses    = ['MIT']
 
   s.add_dependency 'active_model_serializers', '>= 0.9'
+  s.add_development_dependency 'sqlite3'
   s.add_development_dependency 'activerecord', '~> 4'
   s.add_development_dependency 'pry', '~> 0.9'
   s.add_development_dependency 'activesupport', '~> 4'
