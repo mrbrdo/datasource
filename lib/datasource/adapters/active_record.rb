@@ -20,7 +20,8 @@ module Datasource
           self
         end
 
-        def to_a
+      private
+        def exec_queries
           if @datasource
             datasource = @datasource.new(self)
             datasource.select(*Array(@datasource_select))
@@ -31,7 +32,8 @@ module Datasource
               datasource.select(*select)
             end
 
-            datasource.results
+            @loaded = true
+            @records = datasource.results
           else
             super
           end
