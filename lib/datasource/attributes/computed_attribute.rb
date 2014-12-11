@@ -23,7 +23,7 @@ module Datasource
       deps = _deps.select { |dep| dep.kind_of?(Hash) }
       _deps.reject! { |dep| dep.kind_of?(Hash) }
       unless _deps.empty?
-        self_key = adapter.get_table_name(orm_klass)
+        self_key = default_adapter.get_table_name(orm_klass)
         deps.push(self_key => _deps)
       end
 
