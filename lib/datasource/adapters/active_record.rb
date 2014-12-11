@@ -27,7 +27,7 @@ module Datasource
             datasource.select(*Array(@datasource_select))
             if @datasource_serializer
               select = []
-              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer)
+              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
 
               datasource.select(*select)
             end
@@ -76,7 +76,8 @@ module Datasource
         end
       end
 
-      def self.association_reflection(klass, name)
+    module_function
+      def association_reflection(klass, name)
         if reflection = klass.reflections[name]
           {
             klass: reflection.klass,
@@ -86,19 +87,23 @@ module Datasource
         end
       end
 
-      def self.get_table_name(klass)
+      def get_table_name(klass)
         klass.table_name.to_sym
       end
 
-      def self.is_scope?(obj)
+      def is_scope?(obj)
         obj.kind_of?(::ActiveRecord::Relation)
       end
 
-      def self.scope_to_class(scope)
+      def scope_to_class(scope)
         scope.klass
       end
 
-      def self.association_klass(reflection)
+      def scope_loaded?(scope)
+        scope.loaded?
+      end
+
+      def association_klass(reflection)
         if reflection.macro == :belongs_to && reflection.options[:polymorphic]
           fail Datasource::Error, "polymorphic belongs_to not supported, write custom loader"
         else
@@ -106,7 +111,7 @@ module Datasource
         end
       end
 
-      def self.preload_association(records, name)
+      def preload_association(records, name)
         return if records.empty?
         return if records.first.association(name.to_sym).loaded?
         klass = records.first.class
@@ -146,43 +151,43 @@ module Datasource
         end
       end
 
-      def to_query
+      def to_query(ds)
         ::ActiveRecord::Base.uncached do
-          @scope.select(*get_select_values).to_sql
+          ds.scope.select(*ds.get_select_values).to_sql
         end
       end
 
-      def select_scope
-        @scope.select(*get_select_values)
+      def select_scope(ds)
+        ds.scope.select(*ds.get_select_values)
       end
 
-      def get_rows
+      def get_rows(ds)
         append_select = []
-        @expose_associations.each_pair do |assoc_name, assoc_select|
-          if reflection = Adapters::ActiveRecord.association_reflection(self.class.orm_klass, assoc_name.to_sym)
+        ds.expose_associations.each_pair do |assoc_name, assoc_select|
+          if reflection = Adapters::ActiveRecord.association_reflection(ds.class.orm_klass, assoc_name.to_sym)
             Datasource::Base.reflection_select(reflection, append_select, [])
           end
         end
-        select(*append_select)
+        ds.select(*append_select)
 
-        scope = select_scope
+        scope = select_scope(ds)
         if scope.respond_to?(:use_datasource)
           scope = scope.spawn.use_datasource(nil)
         end
         scope.includes_values = []
         scope.to_a.tap do |records|
-          @expose_associations.each_pair do |assoc_name, assoc_select|
+          ds.expose_associations.each_pair do |assoc_name, assoc_select|
             Adapters::ActiveRecord.preload_association(records, assoc_name)
           end
         end
       end
 
-      def primary_scope_table(scope)
-        scope.klass.table_name
+      def primary_scope_table(ds)
+        ds.scope.klass.table_name
       end
 
-      def ensure_table_join!(name, att)
-        join_value = @scope.joins_values.find do |value|
+      def ensure_table_join!(ds, name, att)
+        join_value = ds.scope.joins_values.find do |value|
           if value.is_a?(Symbol)
             value.to_s == att[:name]
           elsif value.is_a?(String)
@@ -203,6 +208,10 @@ module Datasource
 
               define_singleton_method(:orm_klass) do
                 klass
+              end
+
+              define_singleton_method(:default_adapter) do
+                Datasource::Adapters::ActiveRecord
               end
 
               define_method(:primary_key) do

@@ -25,7 +25,7 @@ module Datasource
             datasource.select(*Array(@datasource_select))
             if @datasource_serializer
               select = []
-              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer)
+              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
 
               datasource.select(*select)
             end
@@ -75,7 +75,8 @@ module Datasource
         end
       end
 
-      def self.association_reflection(klass, name)
+    module_function
+      def association_reflection(klass, name)
         reflection = klass.association_reflections[name]
 
         macro = case reflection[:type]
@@ -92,15 +93,15 @@ module Datasource
         }
       end
 
-      def self.get_table_name(klass)
+      def get_table_name(klass)
         klass.table_name
       end
 
-      def self.is_scope?(obj)
+      def is_scope?(obj)
         obj.kind_of?(::Sequel::Dataset)
       end
 
-      def self.scope_to_class(scope)
+      def scope_to_class(scope)
         if scope.row_proc && scope.row_proc.ancestors.include?(::Sequel::Model)
           scope.row_proc
         else
@@ -108,29 +109,8 @@ module Datasource
         end
       end
 
-      def to_query(scope)
-        scope.sql
-      end
-
-      def select_scope
-        @scope.select(*get_sequel_select_values)
-      end
-
-      def get_rows
-        eager = {}
-        append_select = []
-        @expose_associations.each_pair do |assoc_name, assoc_select|
-          eager.merge!(
-            get_assoc_eager_options(self.class.orm_klass, assoc_name.to_sym, assoc_select, append_select))
-        end
-        # TODO: remove/disable datasource on scope if present
-        scope = select_scope
-        if scope.respond_to?(:use_datasource)
-          scope = scope.clone.use_datasource(nil)
-        end
-        scope
-        .select_append(*get_sequel_select_values(append_select.map { |v| primary_scope_table(@scope) + ".#{v}" }))
-        .eager(eager).all
+      def scope_loaded?(scope)
+        false
       end
 
       def get_assoc_eager_options(klass, name, assoc_select, append_select)
@@ -153,15 +133,40 @@ module Datasource
       end
 
       def get_sequel_select_values(values = nil)
-        (values || get_select_values).map { |str| ::Sequel.lit(str) }
+        values.map { |str| ::Sequel.lit(str) }
       end
 
-      def primary_scope_table(scope)
-        scope.first_source_alias.to_s
+      def to_query(ds)
+        ds.scope.sql
       end
 
-      def ensure_table_join!(name, att)
-        join_value = Hash(@scope.opts[:join]).find do |value|
+      def select_scope(ds)
+        ds.scope.select(*get_sequel_select_values(ds.get_select_values))
+      end
+
+      def get_rows(ds)
+        eager = {}
+        append_select = []
+        ds.expose_associations.each_pair do |assoc_name, assoc_select|
+          eager.merge!(
+            get_assoc_eager_options(ds.class.orm_klass, assoc_name.to_sym, assoc_select, append_select))
+        end
+        # TODO: remove/disable datasource on scope if present
+        scope = select_scope(ds)
+        if scope.respond_to?(:use_datasource)
+          scope = scope.clone.use_datasource(nil)
+        end
+        scope
+        .select_append(*get_sequel_select_values(append_select.map { |v| primary_scope_table(ds) + ".#{v}" }))
+        .eager(eager).all
+      end
+
+      def primary_scope_table(ds)
+        ds.scope.first_source_alias.to_s
+      end
+
+      def ensure_table_join!(ds, name, att)
+        join_value = Hash(ds.scope.opts[:join]).find do |value|
           (value.table_alias || value.table).to_s == att[:name]
         end
         fail Datasource::Error, "given scope does not join on #{name}, but it is required by #{att[:name]}" unless join_value
@@ -176,6 +181,10 @@ module Datasource
 
               define_singleton_method(:orm_klass) do
                 klass
+              end
+
+              define_singleton_method(:default_adapter) do
+                Datasource::Adapters::Sequel
               end
 
               define_method(:primary_key) do

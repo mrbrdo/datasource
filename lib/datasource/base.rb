@@ -8,10 +8,9 @@ module Datasource
         base._attributes = (_attributes || {}).dup
         base._associations = (_associations || {}).dup
         base._loaders = (_loaders || {}).dup
-        self.send :include, adapter
       end
 
-      def adapter
+      def default_adapter
         @adapter ||= begin
           Datasource::Adapters.const_get(Datasource::Adapters.constants.first)
         end
@@ -68,7 +67,10 @@ module Datasource
       end
     end
 
-    def initialize(scope)
+    attr_reader :scope, :expose_attributes, :expose_associations, :adapter
+
+    def initialize(scope, adapter = nil)
+      @adapter = adapter || self.class.default_adapter
       @scope =
         if self.class._update_scope
           self.class._update_scope.call(scope)
@@ -115,7 +117,7 @@ module Datasource
     end
 
     def get_select_values
-      scope_table = primary_scope_table(@scope)
+      scope_table = adapter.primary_scope_table(self)
       select_values = Set.new
       select_values.add("#{scope_table}.#{primary_key}")
 
@@ -127,7 +129,7 @@ module Datasource
             att[:klass]._depends.keys.map(&:to_s).each do |name|
               next if name == scope_table
               next if name == "loaders"
-              ensure_table_join!(name, att)
+              adapter.ensure_table_join!(self, name, att)
             end
             att[:klass]._depends.each_pair do |table, names|
               next if table.to_sym == :loaders
@@ -140,7 +142,7 @@ module Datasource
             select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
             att[:klass]._depends.each do |name|
               next if name == scope_table
-              ensure_table_join!(name, att)
+              adapter.ensure_table_join!(self, name, att)
             end
           end
         end
@@ -153,7 +155,7 @@ module Datasource
     end
 
     def results(rows = nil)
-      rows ||= get_rows
+      rows ||= adapter.get_rows(self)
 
       @expose_attributes.each do |name|
         att = self.class._attributes[name]

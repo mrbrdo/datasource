@@ -10,7 +10,8 @@ module Datasource
     active_model_serializers: :ams
   }
 
-  def self.load(*adapters)
+module_function
+  def load(*adapters)
     if adapters.empty?
       adapters = []
       if defined? ActiveRecord
@@ -27,6 +28,12 @@ module Datasource
       adapter = AdapterPaths[adapter]
       adapter = AdapterPaths[adapter] if adapter.is_a?(Symbol)
       require adapter
+    end
+  end
+
+  def orm_adapters
+    @orm_adapters ||= begin
+      Datasource::Adapters.constants.map { |name| Datasource::Adapters.const_get(name) }
     end
   end
 end
