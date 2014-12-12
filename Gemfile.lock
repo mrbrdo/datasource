@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    datasource (0.0.3)
+    datasource (0.0.4)
       active_model_serializers (>= 0.9)
 
 GEM
