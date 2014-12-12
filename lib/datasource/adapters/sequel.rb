@@ -48,7 +48,7 @@ module Datasource
               scope = if respond_to?(:use_datasource_serializer)
                 self
               else
-                self.extend(ScopeExtensions).use_datasource(default_datasource)
+                self.extend(ScopeExtensions).use_datasource(Adapters::Sequel.scope_to_class(self).default_datasource)
               end
               scope.use_datasource_serializer(serializer || Datasource::Base.consumer_adapter.get_serializer_for(Adapters::Sequel.scope_to_class(scope)))
             end
