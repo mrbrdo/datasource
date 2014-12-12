@@ -151,13 +151,13 @@ A loader will only be executed if a computed attribute depends on it. If an attr
 on multiple loaders, pass an array of loaders like so `computed :attr, loaders: [:loader1, :loader2]`.
 
 Be careful that if your hash does not contain a value for the object ID, the loaded value
-will be nil.
+will be nil. However you can use the `default` option for such cases (see below example).
 
 ```ruby
 class User < ActiveRecord::Base
   datasource_module do
     computed :post_count, loaders: :post_counts
-    loader :post_counts, array_to_hash: true do |user_ids|
+    loader :post_counts, array_to_hash: true, default: 0 do |user_ids|
       results = Post
         .where(user_id: user_ids)
         .group(:user_id)
@@ -171,7 +171,7 @@ class UserSerializer < ActiveModel::Serializer
 
   def post_count
     # Will automatically give you the value for this user's ID
-    object.loaded_values[:post_counts] || 0
+    object.loaded_values[:post_counts]
   end
 end
 ```

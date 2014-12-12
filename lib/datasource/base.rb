@@ -177,7 +177,7 @@ module Datasource
                     end
                   end
                   rows.each do |row|
-                    row.loaded_values[name] = loaded_values[row.send(primary_key)]
+                    row.loaded_values[name] = loaded_values[row.send(primary_key)] || loader.default_value
                   end
                 end
               else

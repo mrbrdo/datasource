@@ -13,6 +13,10 @@ module Datasource
           self._options.merge!(hash)
         end
 
+        def default_value
+          self._options[:default]
+        end
+
         def load(*args, &block)
           args = args.slice(0, _load_proc.arity) if _load_proc.arity >= 0
           results = _load_proc.call(*args, &block)
