@@ -14,6 +14,18 @@ module Datasource
           self
         end
 
+        def get_datasource
+          datasource = @datasource.new(self)
+          datasource.select(*Array(@datasource_select))
+          if @datasource_serializer
+            select = []
+            Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
+
+            datasource.select(*select)
+          end
+          datasource
+        end
+
         def datasource_select(*args)
           @datasource_select = Array(@datasource_select) + args
           self
@@ -21,14 +33,7 @@ module Datasource
 
         def each(&block)
           if @datasource
-            datasource = @datasource.new(self)
-            datasource.select(*Array(@datasource_select))
-            if @datasource_serializer
-              select = []
-              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
-
-              datasource.select(*select)
-            end
+            datasource = get_datasource
 
             datasource.results.each(&block)
           else
@@ -64,9 +69,25 @@ module Datasource
           end
         end
 
+        def for_serializer(serializer = nil)
+          datasource_class = self.class.default_datasource
+          pk = datasource_class.primary_key.to_sym
+
+          scope = self.class
+          .with_datasource(datasource_class)
+          .for_serializer(serializer).where(pk => send(pk))
+
+          datasource = scope.get_datasource
+          if datasource.can_upgrade?(self)
+            datasource.upgrade_records(self).first
+          else
+            scope.first
+          end
+        end
+
         module ClassMethods
           def default_datasource
-            @default_datasource ||= Class.new(Datasource::From(self))
+            @default_datasource ||= Datasource::From(self)
           end
 
           def datasource_module(&block)
@@ -113,8 +134,12 @@ module Datasource
         false
       end
 
+      def has_attribute?(record, name)
+        record.values.key?(name.to_sym)
+      end
+
       def get_assoc_eager_options(klass, name, assoc_select, append_select)
-        if reflection = Adapters::Sequel.association_reflection(klass, name)
+        if reflection = association_reflection(klass, name)
           self_append_select = []
           Datasource::Base.reflection_select(reflection, append_select, self_append_select)
           assoc_class = reflection[:klass]
@@ -144,7 +169,12 @@ module Datasource
         ds.scope.select(*get_sequel_select_values(ds.get_select_values))
       end
 
-      def get_rows(ds)
+      def upgrade_records(ds, records)
+        get_final_scope(ds).send :post_load, records
+        ds.results(records)
+      end
+
+      def get_final_scope(ds)
         eager = {}
         append_select = []
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
@@ -158,7 +188,11 @@ module Datasource
         end
         scope
         .select_append(*get_sequel_select_values(append_select.map { |v| primary_scope_table(ds) + ".#{v}" }))
-        .eager(eager).all
+        .eager(eager)
+      end
+
+      def get_rows(ds)
+        get_final_scope(ds).all
       end
 
       def primary_scope_table(ds)
@@ -187,7 +221,7 @@ module Datasource
                 Datasource::Adapters::Sequel
               end
 
-              define_method(:primary_key) do
+              define_singleton_method(:primary_key) do
                 klass.primary_key
               end
             end

@@ -105,13 +105,26 @@ You just need to call `.for_serializer` on the scope. You can optionally give it
 the serializer class as an argument.
 
 ```ruby
-class UsersController < ApplicationController
+class PostsController < ApplicationController
   def show
     post = Post.for_serializer.find(params[:id])
     # also works:
     # post = Post.for_serializer(PostSerializer).find(params[:id])
 
     render json: post
+  end
+end
+```
+
+You can also use it on an existing record, but doing it this way may result in
+an additional SQL query (for example if you use query attributes).
+
+```ruby
+class UsersController < ApplicationController
+  def show
+    user = current_user.for_serializer
+
+    render json: user
   end
 end
 ```

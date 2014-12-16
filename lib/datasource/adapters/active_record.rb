@@ -20,17 +20,22 @@ module Datasource
           self
         end
 
+        def get_datasource
+          datasource = @datasource.new(self)
+          datasource.select(*Array(@datasource_select))
+          if @datasource_serializer
+            select = []
+            Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
+
+            datasource.select(*select)
+          end
+          datasource
+        end
+
       private
         def exec_queries
           if @datasource
-            datasource = @datasource.new(self)
-            datasource.select(*Array(@datasource_select))
-            if @datasource_serializer
-              select = []
-              Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
-
-              datasource.select(*select)
-            end
+            datasource = get_datasource
 
             @loaded = true
             @records = datasource.results
@@ -45,6 +50,22 @@ module Datasource
 
         included do
           attr_accessor :loaded_values
+        end
+
+        def for_serializer(serializer = nil)
+          datasource_class = self.class.default_datasource
+          pk = datasource_class.primary_key.to_sym
+
+          scope = self.class
+          .with_datasource(datasource_class)
+          .for_serializer(serializer).where(pk => send(pk))
+
+          datasource = scope.get_datasource
+          if datasource.can_upgrade?(self)
+            datasource.upgrade_records(self).first
+          else
+            scope.first
+          end
         end
 
         module ClassMethods
@@ -67,7 +88,7 @@ module Datasource
           end
 
           def default_datasource
-            @default_datasource ||= Class.new(Datasource::From(self))
+            @default_datasource ||= Datasource::From(self)
           end
 
           def datasource_module(&block)
@@ -103,6 +124,10 @@ module Datasource
         scope.loaded?
       end
 
+      def has_attribute?(record, name)
+        record.attributes.key?(name.to_s)
+      end
+
       def association_klass(reflection)
         if reflection.macro == :belongs_to && reflection.options[:polymorphic]
           fail Datasource::Error, "polymorphic belongs_to not supported, write custom loader"
@@ -111,7 +136,7 @@ module Datasource
         end
       end
 
-      def preload_association(records, name)
+      def load_association(records, name)
         return if records.empty?
         return if records.first.association(name.to_sym).loaded?
         klass = records.first.class
@@ -125,7 +150,7 @@ module Datasource
           scope = assoc_class.all
           datasource = datasource_class.new(scope)
           datasource_select = serializer_class._attributes.dup
-          Datasource::Base.reflection_select(Adapters::ActiveRecord.association_reflection(klass, name.to_sym), [], datasource_select)
+          Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], datasource_select)
           datasource.select(*datasource_select)
           select_values = datasource.get_select_values
 
@@ -139,7 +164,7 @@ module Datasource
 
           assoc_records = records.flat_map { |record| record.send(name) }.compact
           serializer_class._associations.each_pair do |assoc_name, options|
-            preload_association(assoc_records, assoc_name)
+            load_association(assoc_records, assoc_name)
           end
           datasource.results(assoc_records)
         end
@@ -161,10 +186,21 @@ module Datasource
         ds.scope.select(*ds.get_select_values)
       end
 
+      def upgrade_records(ds, records)
+        load_associations(ds, records)
+        ds.results(records)
+      end
+
+      def load_associations(ds, records)
+        ds.expose_associations.each_pair do |assoc_name, assoc_select|
+          load_association(records, assoc_name)
+        end
+      end
+
       def get_rows(ds)
         append_select = []
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
-          if reflection = Adapters::ActiveRecord.association_reflection(ds.class.orm_klass, assoc_name.to_sym)
+          if reflection = association_reflection(ds.class.orm_klass, assoc_name.to_sym)
             Datasource::Base.reflection_select(reflection, append_select, [])
           end
         end
@@ -176,9 +212,7 @@ module Datasource
         end
         scope.includes_values = []
         scope.to_a.tap do |records|
-          ds.expose_associations.each_pair do |assoc_name, assoc_select|
-            Adapters::ActiveRecord.preload_association(records, assoc_name)
-          end
+          load_associations(ds, records)
         end
       end
 
@@ -214,7 +248,7 @@ module Datasource
                 Datasource::Adapters::ActiveRecord
               end
 
-              define_method(:primary_key) do
+              define_singleton_method(:primary_key) do
                 klass.primary_key.to_sym
               end
             end

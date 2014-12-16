@@ -24,6 +24,10 @@ module Datasource
         fail Datasource::Error, "Model class not set for #{name}. You should define it:\nclass YourDatasource\n  @orm_klass = MyModelClass\nend"
       end
 
+      def primary_key
+        :id
+      end
+
       def reflection_select(reflection, parent_select, assoc_select)
         # append foreign key depending on assoication
         if reflection[:macro] == :belongs_to
@@ -81,10 +85,6 @@ module Datasource
       @expose_associations = {}
     end
 
-    def primary_key
-      :id
-    end
-
     def select_all
       @expose_attributes = self.class._attributes.keys.dup
     end
@@ -119,7 +119,7 @@ module Datasource
     def get_select_values
       scope_table = adapter.primary_scope_table(self)
       select_values = Set.new
-      select_values.add("#{scope_table}.#{primary_key}")
+      select_values.add("#{scope_table}.#{self.class.primary_key}")
 
       self.class._attributes.values.each do |att|
         if attribute_exposed?(att[:name])
@@ -154,6 +154,27 @@ module Datasource
       @expose_attributes.include?(name.to_s)
     end
 
+    # assume records have all attributes selected (default ORM record)
+    def can_upgrade?(records)
+      query_attributes = @expose_attributes.select do |name|
+        klass = self.class._attributes[name][:klass]
+        if klass
+          klass.ancestors.include?(Attributes::QueryAttribute)
+        end
+      end
+
+      return true if query_attributes.empty?
+      Array(records).all? do |record|
+        query_attributes.all? do |name|
+          adapter.has_attribute?(record, name)
+        end
+      end
+    end
+
+    def upgrade_records(records)
+      adapter.upgrade_records(self, Array(records))
+    end
+
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
 
@@ -170,14 +191,14 @@ module Datasource
           if loaders
             Array(loaders).each do |name|
               if loader = self.class._loaders[name]
-                if loaded_values = loader.load(rows.map(&primary_key), rows, @scope)
+                if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
                   unless rows.first.loaded_values
                     rows.each do |row|
                       row.loaded_values = {}
                     end
                   end
                   rows.each do |row|
-                    row.loaded_values[name] = loaded_values[row.send(primary_key)] || loader.default_value
+                    row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
                   end
                 end
               else
