@@ -2,15 +2,22 @@ module Datasource
   module Attributes
     class ComputedAttribute
       class << self
-        attr_accessor :_depends
+        attr_accessor :_depends, :_loader_depends
 
         def inherited(base)
           base._depends = (_depends || {}).dup # TODO: deep dup?
+          base._loader_depends = (_loader_depends || []).dup # TODO: deep dup?
         end
 
         def depends(*args)
           args.each do |dep|
             _depends.deep_merge!(dep)
+          end
+          _depends.delete_if do |key, value|
+            if [:loaders, :loader].include?(key.to_sym)
+              self._loader_depends += Array(value).map(&:to_sym)
+              true
+            end
           end
         end
       end

@@ -91,6 +91,7 @@ module Datasource
 
     def select(*names)
       failure = ->(name) { fail Datasource::Error, "attribute or association #{name} doesn't exist for #{self.class.orm_klass.name}, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" }
+      newly_exposed_attributes = []
       names.each do |name|
         if name.kind_of?(Hash)
           name.each_pair do |assoc_name, assoc_select|
@@ -106,18 +107,47 @@ module Datasource
         else
           name = name.to_s
           if self.class._attributes.key?(name)
-            @expose_attributes.push(name)
+            unless @expose_attributes.include?(name)
+              @expose_attributes.push(name)
+              newly_exposed_attributes.push(name)
+            end
           else
             failure.call(name)
           end
         end
       end
-      @expose_attributes.uniq!
+      update_dependencies(newly_exposed_attributes) unless newly_exposed_attributes.empty?
       self
+    end
+
+    def update_dependencies(names)
+      scope_table = adapter.primary_scope_table(self)
+
+      self.class._attributes.values.each do |att|
+        next unless names.include?(att[:name])
+        next unless att[:klass]
+
+        if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
+          att[:klass]._depends.each_pair do |key, value|
+            if key.to_s == scope_table
+              select(*value)
+            else
+              select(key => value)
+            end
+          end
+        elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
+          att[:klass]._depends.each do |name|
+            next if name == scope_table
+            adapter.ensure_table_join!(self, name, att)
+          end
+        end
+      end
     end
 
     def get_select_values
       scope_table = adapter.primary_scope_table(self)
+
+      # SQL select values
       select_values = Set.new
       select_values.add("#{scope_table}.#{self.class.primary_key}")
 
@@ -125,28 +155,12 @@ module Datasource
         if attribute_exposed?(att[:name])
           if att[:klass] == nil
             select_values.add("#{scope_table}.#{att[:name]}")
-          elsif att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-            att[:klass]._depends.keys.map(&:to_s).each do |name|
-              next if name == scope_table
-              next if name == "loaders"
-              adapter.ensure_table_join!(self, name, att)
-            end
-            att[:klass]._depends.each_pair do |table, names|
-              next if table.to_sym == :loaders
-              Array(names).each do |name|
-                select_values.add("#{table}.#{name}")
-              end
-              # TODO: handle depends on virtual attribute
-            end
           elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
             select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
-            att[:klass]._depends.each do |name|
-              next if name == scope_table
-              adapter.ensure_table_join!(self, name, att)
-            end
           end
         end
       end
+
       select_values.to_a
     end
 
@@ -187,23 +201,20 @@ module Datasource
         next if rows.empty?
 
         if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-          loaders = att[:klass]._depends[:loaders]
-          if loaders
-            Array(loaders).each do |name|
-              if loader = self.class._loaders[name]
-                if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
-                  unless rows.first.loaded_values
-                    rows.each do |row|
-                      row.loaded_values = {}
-                    end
-                  end
+          att[:klass]._loader_depends.each do |name|
+            if loader = self.class._loaders[name]
+              if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
+                unless rows.first.loaded_values
                   rows.each do |row|
-                    row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
+                    row.loaded_values = {}
                   end
                 end
-              else
-                raise Datasource::Error, "loader with name :#{name} could not be found"
+                rows.each do |row|
+                  row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
+                end
               end
+            else
+              raise Datasource::Error, "loader with name :#{name} could not be found"
             end
           end
         end
