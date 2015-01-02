@@ -18,12 +18,12 @@ Run install generator:
 rails g datasource:install
 ```
 
-### ORM support
+#### ORM support
 
 - ActiveRecord
 - Sequel
 
-### Serializer support
+#### Serializer support
 
 - active_model_serializers
 
@@ -66,18 +66,16 @@ SELECT id, title, user_id FROM posts WHERE id IN (?)
 ```
 
 ### Model Methods / Virtual Attributes
-You need to specify which database columns a method depends on to be able to use it.
-The method itself can be either in the serializer or in your model, it doesn't matter.
-
-You can list multiple dependency columns.
+You need to use `computed` in a `datasource_module` block to specify what a method depends on. It can depend on database columns, other computed attributes or loaders.
 
 ```ruby
 class User < ActiveRecord::Base
   datasource_module do
     computed :first_name_initial, :first_name
-    computed :last_name_initial, :last_name
+    computed :both_initials, :first_name, :last_name
   end
 
+  # method can be in model
   def first_name_initial
     first_name[0].upcase
   end
@@ -86,8 +84,9 @@ end
 class UserSerializer < ActiveModel::Serializer
   attributes :first_name_initial, :last_name_initial
 
-  def last_name_initial
-    object.last_name[0].upcase
+  # method can also be in serializer
+  def both_initials
+    object.last_name[0].upcase + object.last_name[0].upcase
   end
 end
 ```
@@ -100,15 +99,15 @@ You will be reminded with an exception if you forget to do this.
 
 ### Show action
 
-You will probably want to reuse the same preloading rules in your show action.
-You just need to call `.for_serializer` on the scope. You can optionally give it
-the serializer class as an argument.
+You will probably want to reuse the same preloading logic in your show action.
+You will need to call `for_serializer` on the scope before you call `find`.
+You can optionally give it the serializer class as an argument.
 
 ```ruby
 class PostsController < ApplicationController
   def show
     post = Post.for_serializer.find(params[:id])
-    # also works:
+    # more explicit:
     # post = Post.for_serializer(PostSerializer).find(params[:id])
 
     render json: post
@@ -154,11 +153,13 @@ end
 SELECT users.id, (users.first_name || ' ' || users.last_name) AS full_name FROM users
 ```
 
+Note: If you need data from another table, use a join in a loader (see below).
+
 ### Loaders
 
 You might want to have some more complex preloading logic. In that case you can use a loader.
-The loader will receive ids of the records, and you need to return a hash with your data.
-The key of the hash must be the id of the record for which the data is.
+A loader will receive ids of the records, and needs to return a hash.
+The key of the hash must be the id of the record for which the value is.
 
 A loader will only be executed if a computed attribute depends on it. If an attribute depends
 on multiple loaders, pass an array of loaders like so `computed :attr, loaders: [:loader1, :loader2]`.
@@ -169,7 +170,7 @@ will be nil. However you can use the `default` option for such cases (see below 
 ```ruby
 class User < ActiveRecord::Base
   datasource_module do
-    computed :post_count, loaders: :post_counts
+    computed :post_count, loader: :post_counts
     loader :post_counts, array_to_hash: true, default: 0 do |user_ids|
       results = Post
         .where(user_id: user_ids)
