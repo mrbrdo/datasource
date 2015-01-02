@@ -130,7 +130,7 @@ end
 
 ## Advanced Usage
 
-### Query attributes
+### Query attribute
 
 You can specify a SQL fragment for `SELECT` and use that as an attribute on your
 model. As a simple example you can concatenate 2 strings together in SQL:
@@ -155,7 +155,7 @@ SELECT users.id, (users.first_name || ' ' || users.last_name) AS full_name FROM 
 
 Note: If you need data from another table, use a join in a loader (see below).
 
-### Loaders
+### Loader
 
 You might want to have some more complex preloading logic. In that case you can use a loader.
 A loader will receive ids of the records, and needs to return a hash.
@@ -223,4 +223,61 @@ loader :stuff, group_by: "user_id", one: true do |ids|
   # will be transformed into
   # { 10 => { "title" => "Something", "user_id" => 10 } }
 end
+```
+
+### Loaded
+
+Loaded is the same as loader, but it also creates a computed attribute and defines
+a method with the same name on your model.
+
+Here is the previous example with `loaded` instead of `loader`:
+
+```ruby
+class User < ActiveRecord::Base
+  datasource_module do
+    loaded :post_count, array_to_hash: true, default: 0 do |user_ids|
+      results = Post
+        .where(user_id: user_ids)
+        .group(:user_id)
+        .pluck("user_id, COUNT(id)")
+    end
+  end
+end
+
+class UserSerializer < ActiveModel::Serializer
+  attributes :id, :post_count
+  # Note that the User now has a generated post_count method
+end
+```
+
+In the above example, if the Post model already had a `post_count` method defined,
+you would get an exception. In such case you should either use a different name, or use `loader` and `computed`, and read the value in your method with `loaded_values[:post_counts]`. The latter makes sense if you still want this method to work when you are not using the model with a serializer. For example:
+
+```ruby
+class User < ActiveRecord::Base
+  datasource_module do
+    computed :post_count, loader: :post_counts
+    loader :post_counts, array_to_hash: true, default: 0 do |user_ids|
+      results = Post
+        .where(user_id: user_ids)
+        .group(:user_id)
+        .pluck("user_id, COUNT(id)")
+    end
+  end
+
+  def post_count
+    # Datasource is being used
+    if loaded_values
+      loaded_values[:post_counts]
+    # Datasource is not being used
+    else
+      posts.count
+    end
+  end
+end
+
+class UserSerializer < ActiveModel::Serializer
+  attributes :id, :post_count
+end
+
 ```

@@ -65,5 +65,16 @@ module Datasource
       end
       @_loaders[name.to_sym] = klass
     end
+
+    def self.loaded(name, _options = {}, &block)
+      loader(name, _options, &block)
+      orm_klass.class_eval do
+        fail "#{name} already defined on #{to_s}, would be overridden by datasource loaded method" if method_defined?(name)
+        define_method name do
+          loaded_values[name.to_sym]
+        end
+      end
+      computed name, loader: name
+    end
   end
 end
