@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name               = "datasource"
-  s.version            = "0.0.5"
+  s.version            = "0.0.6"
 
   s.authors = ["Jan Berdajs"]
   s.date = %q{2014-12-11}
