@@ -10,11 +10,8 @@ Add to Gemfile
 gem 'datasource'
 ```
 
-And `bundle install`.
-
-Run install generator:
-
 ```
+bundle install
 rails g datasource:install
 ```
 
