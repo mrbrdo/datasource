@@ -250,34 +250,32 @@ class UserSerializer < ActiveModel::Serializer
 end
 ```
 
-In the above example, if the Post model already had a `post_count` method defined,
-you would get an exception. In such case you should either use a different name, or use `loader` and `computed`, and read the value in your method with `loaded_values[:post_counts]`. The latter makes sense if you still want this method to work when you are not using the model with a serializer. For example:
+When using `loaded`, if you already have the method with this name defined in your
+model, datasource will automatically create a 'wrapper' method that will use the
+loaded value if available (when you are using a serializer/datasource), otherwise
+it will fallback to your original method. This way you can still use the same
+method when you are not using a serializer/datasource. For example:
 
 ```ruby
 class User < ActiveRecord::Base
   datasource_module do
-    computed :post_count, loader: :post_counts
-    loader :post_counts, array_to_hash: true, default: 0 do |user_ids|
+    loaded :post_count, array_to_hash: true, default: 0 do |user_ids|
       results = Post
         .where(user_id: user_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
-  end
 
-  def post_count
-    # Datasource is being used
-    if loaded_values
-      loaded_values[:post_counts]
-    # Datasource is not being used
-    else
+    def post_count
       posts.count
     end
   end
 end
 
 class UserSerializer < ActiveModel::Serializer
-  attributes :id, :post_count
+  attributes :id, :post_count # <- post_count will be read from loaded_values
 end
+
+User.first.post_count # <- your method will be called
 
 ```
