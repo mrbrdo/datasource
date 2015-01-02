@@ -92,6 +92,7 @@ module Datasource
     def select(*names)
       failure = ->(name) { fail Datasource::Error, "attribute or association #{name} doesn't exist for #{self.class.orm_klass.name}, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" }
       newly_exposed_attributes = []
+      missing_attributes = []
       names.each do |name|
         if name.kind_of?(Hash)
           name.each_pair do |assoc_name, assoc_select|
@@ -101,6 +102,7 @@ module Datasource
               @expose_associations[assoc_name] += Array(assoc_select)
               @expose_associations[assoc_name].uniq!
             else
+              missing_attributes << assoc_name
               failure.call(assoc_name)
             end
           end
@@ -112,12 +114,25 @@ module Datasource
               newly_exposed_attributes.push(name)
             end
           else
+            missing_attributes << name
             failure.call(name)
           end
         end
       end
       update_dependencies(newly_exposed_attributes) unless newly_exposed_attributes.empty?
+      fail_missing_attributes(missing_attributes) unless missing_attributes.blank?
       self
+    end
+
+    def fail_missing_attributes(names)
+      message = if names.size > 1
+        "attributes or associations #{names.join(', ')} don't exist "
+      else
+        "attribute or association #{names.first} doesn't exist "
+      end
+      message += "for #{self.class.orm_klass.name}, "
+      message += "did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?"
+      fail Datasource::Error, message
     end
 
     def update_dependencies(names)
