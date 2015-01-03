@@ -276,3 +276,54 @@ end
 User.first.post_count # <- your method will be called
 
 ```
+
+### Using Datasource without a serializer
+
+You can also use Datasource without a specific serializer:
+
+```ruby
+Post.with_datasource.datasource_select(:id, :title, :comments).to_a
+```
+
+This is actually more or less what `for_serializer` does under the hood. It
+determines the arguments for `datasource_select` from the serializer's metadata.
+
+### Selecting additional attributes
+
+You can also use `for_serializer` and then select additional attributes. A real
+world example where you might need this is in a loader:
+
+```ruby
+class Comment < ActiveRecord::Base
+  belongs_to :post
+end
+
+class Post < ActiveRecord::Base
+  has_many :comments
+
+  datasource_module do
+    loaded :newest_comment, group_by: :post_id, one: true do |post_ids|
+      Comment.for_serializer.where(post_id: post_ids)
+        .group("post_id")
+        .having("id = MAX(id)")
+        .datasource_select(:post_id)
+    end
+  end
+end
+
+class CommentSerializer < ActiveModel::Serializer
+  attributes :id, :comment
+end
+
+class PostSerializer < ActiveModel::Serializer
+  attributes :id, :title, :newest_comment
+
+  def newest_comment
+    CommentSerializer.new(object.newest_comment).as_json
+  end
+end
+```
+
+In this case, the `CommentSerializer` does not need `post_id`, however we need it
+for the loader's `group_by`. So we used both `for_serializer` and also
+`datasource_select(:post_id)` to additionally select `post_id`.
