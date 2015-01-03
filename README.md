@@ -27,7 +27,7 @@ rails g datasource:install
 ## Basic Usage
 
 ### Attributes
-You don't have to do anything special.
+You don't have to do anything special if the attribute is **a database column**.
 
 ```ruby
 class UserSerializer < ActiveModel::Serializer
@@ -40,6 +40,8 @@ But you get an optimized query for free:
 ```sql
 SELECT id, email FROM users
 ```
+
+If the attribute is **not a database column**, see [Model Methods and Virtual Attributes](#model-methods-and-virtual-attributes).
 
 ### Associations
 You don't have to do anything special.
@@ -62,7 +64,7 @@ SELECT id FROM users
 SELECT id, title, user_id FROM posts WHERE id IN (?)
 ```
 
-### Model Methods / Virtual Attributes
+### Model Methods and Virtual Attributes
 You need to use `computed` in a `datasource_module` block to specify what a method depends on. It can depend on database columns, other computed attributes or loaders.
 
 ```ruby
