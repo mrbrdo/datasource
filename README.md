@@ -262,10 +262,10 @@ class User < ActiveRecord::Base
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
+  end
 
-    def post_count
-      posts.count
-    end
+  def post_count
+    posts.count
   end
 end
 
