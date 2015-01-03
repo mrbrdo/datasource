@@ -64,13 +64,25 @@ SELECT id FROM users
 SELECT id, title, user_id FROM posts WHERE id IN (?)
 ```
 
+This means you **do not** need to call `includes` yourself. It will be done
+automatically by Datasource.
+
 ### Model Methods and Virtual Attributes
-You need to use `computed` in a `datasource_module` block to specify what a method depends on. It can depend on database columns, other computed attributes or loaders.
+If you try to use a model method or virtual attribute in your serializer, you will
+get an error from Datasource. Since the method computes the value based on some
+other attributes, you need to tell Datasource what these dependencies are.
+
+To do this, call `computed` in a `datasource_module` block like in the below
+example. It can depend on database columns, other computed attributes or loaders
+(advanced feature).
 
 ```ruby
 class User < ActiveRecord::Base
   datasource_module do
+    # The method first_name_initial depends on first_name column
     computed :first_name_initial, :first_name
+    # The method both_initials (in the serializer)
+    # depends on first_name and last_name columns
     computed :both_initials, :first_name, :last_name
   end
 
@@ -81,7 +93,7 @@ class User < ActiveRecord::Base
 end
 
 class UserSerializer < ActiveModel::Serializer
-  attributes :first_name_initial, :last_name_initial
+  attributes :first_name_initial, :both_initials
 
   # method can also be in serializer
   def both_initials
@@ -93,8 +105,6 @@ end
 ```sql
 SELECT first_name, last_name FROM users
 ```
-
-You will be reminded with an exception if you forget to do this.
 
 ### Show action
 
