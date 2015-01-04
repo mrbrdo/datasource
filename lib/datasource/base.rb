@@ -90,7 +90,6 @@ module Datasource
     end
 
     def select(*names)
-      failure = ->(name) { fail Datasource::Error, "attribute or association #{name} doesn't exist for #{self.class.orm_klass.name}, did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?" }
       newly_exposed_attributes = []
       missing_attributes = []
       names.each do |name|
@@ -103,7 +102,6 @@ module Datasource
               @expose_associations[assoc_name].uniq!
             else
               missing_attributes << assoc_name
-              failure.call(assoc_name)
             end
           end
         else
@@ -115,7 +113,6 @@ module Datasource
             end
           else
             missing_attributes << name
-            failure.call(name)
           end
         end
       end
