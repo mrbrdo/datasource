@@ -13,6 +13,7 @@ require 'active_model_serializers'
 
 Datasource.setup do |config|
   config.adapters = [:activerecord, :sequel, :ams]
+  config.simple_mode = false
 end
 
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each { |f| require f }
@@ -34,5 +35,13 @@ RSpec.configure do |config|
 
   config.after :each do
     DatabaseCleaner.clean
+  end
+
+  config.before(:example, simple_mode: true) do
+    Datasource.config.simple_mode = true
+  end
+
+  config.after(:example, simple_mode: true) do
+    Datasource.config.simple_mode = false
   end
 end

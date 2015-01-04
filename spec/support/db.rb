@@ -30,7 +30,7 @@ def expect_query_count(count)
   logger = StringIO.new
   ActiveRecord::Base.logger = Logger.new(logger)
   begin
-    yield
+    yield(logger)
   ensure
     ActiveRecord::Base.logger = old_logger
     # puts logger.string
@@ -43,7 +43,7 @@ def expect_query_count_sequel(count)
   logger = Logger.new(logger_io)
   Sequel::Model.db.loggers << logger
   begin
-    yield
+    yield(logger_io)
   ensure
     Sequel::Model.db.loggers.delete(logger)
     # puts logger_io.string

@@ -5,6 +5,7 @@ module Datasource
 
     included do |base|
       base.config.adapters = Configuration.default_adapters
+      base.config.simple_mode = false
     end
 
     def self.default_adapters

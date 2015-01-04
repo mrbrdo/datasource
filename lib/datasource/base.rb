@@ -83,10 +83,26 @@ module Datasource
         end
       @expose_attributes = []
       @expose_associations = {}
+      @select_all_columns = false
+    end
+
+    def select_all_columns
+      column_attributes = self.class._attributes.values.select do |att|
+        att[:klass].nil?
+      end
+      columns = column_attributes.map { |att| att[:name] }
+      select(*columns)
+      @select_all_columns = true
+
+      columns
     end
 
     def select_all
-      @expose_attributes = self.class._attributes.keys.dup
+      attributes = self.class._attributes.keys
+      select(*attributes)
+      @select_all_columns = true
+
+      attributes
     end
 
     def select(*names)
@@ -98,7 +114,7 @@ module Datasource
             assoc_name = assoc_name.to_s
             if self.class._associations.key?(assoc_name)
               @expose_associations[assoc_name] ||= []
-              @expose_associations[assoc_name] += Array(assoc_select)
+              @expose_associations[assoc_name].concat(Array(assoc_select))
               @expose_associations[assoc_name].uniq!
             else
               missing_attributes << assoc_name
@@ -106,7 +122,9 @@ module Datasource
           end
         else
           name = name.to_s
-          if self.class._attributes.key?(name)
+          if name == "*"
+            newly_exposed_attributes.concat(select_all_columns.map(&:to_s))
+          elsif self.class._attributes.key?(name)
             unless @expose_attributes.include?(name)
               @expose_attributes.push(name)
               newly_exposed_attributes.push(name)
@@ -158,17 +176,28 @@ module Datasource
 
     def get_select_values
       scope_table = adapter.primary_scope_table(self)
-
-      # SQL select values
       select_values = Set.new
-      select_values.add("#{scope_table}.#{self.class.primary_key}")
 
-      self.class._attributes.values.each do |att|
-        if attribute_exposed?(att[:name])
-          if att[:klass] == nil
-            select_values.add("#{scope_table}.#{att[:name]}")
-          elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
-            select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
+      if @select_all_columns
+        select_values.add("#{scope_table}.*")
+
+        self.class._attributes.values.each do |att|
+          if att[:klass] && attribute_exposed?(att[:name])
+            if att[:klass].ancestors.include?(Attributes::QueryAttribute)
+              select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
+            end
+          end
+        end
+      else
+        select_values.add("#{scope_table}.#{self.class.primary_key}")
+
+        self.class._attributes.values.each do |att|
+          if attribute_exposed?(att[:name])
+            if att[:klass] == nil
+              select_values.add("#{scope_table}.#{att[:name]}")
+            elsif att[:klass].ancestors.include?(Attributes::QueryAttribute)
+              select_values.add("(#{att[:klass].select_value}) as #{att[:name]}")
+            end
           end
         end
       end

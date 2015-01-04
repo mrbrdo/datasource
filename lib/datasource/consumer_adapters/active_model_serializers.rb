@@ -36,6 +36,7 @@ module Datasource
       def to_datasource_select(result, klass, serializer = nil, serializer_assoc = nil, adapter = nil)
         adapter ||= Datasource::Base.default_adapter
         serializer ||= get_serializer_for(klass, serializer_assoc)
+        result.unshift("*") if Datasource.config.simple_mode
         result.concat(serializer._attributes)
         result_assocs = {}
         result.push(result_assocs)

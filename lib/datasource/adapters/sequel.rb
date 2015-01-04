@@ -149,7 +149,7 @@ module Datasource
           {
             name => ->(ds) {
               ds.with_datasource(datasource_class)
-              .datasource_select(*(self_append_select + assoc_select))
+              .datasource_select(*(assoc_select + self_append_select))
             }
           }
         else
