@@ -248,3 +248,17 @@ end
 User.first.post_count # <- your method will be called
 
 ```
+
+## Getting Help
+
+If you find a bug, please report an [Issue](https://github.com/mrbrdo/datasource/issues/new).
+
+If you have a question, you can also open an Issue.
+
+## Contributing
+
+1. Fork it ( https://github.com/mrbrdo/datasource/fork )
+2. Create your feature branch (`git checkout -b my-new-feature`)
+3. Commit your changes (`git commit -am 'Add some feature'`)
+4. Push to the branch (`git push origin my-new-feature`)
+5. Create a new Pull Request
