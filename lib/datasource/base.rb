@@ -249,7 +249,12 @@ module Datasource
                     end
                   end
                   rows.each do |row|
-                    row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
+                    key = row.send(self.class.primary_key)
+                    if loaded_values.key?(key)
+                      row.loaded_values[name] = loaded_values[key]
+                    elsif loader.default_value
+                      row.loaded_values[name] = loader.default_value
+                    end
                   end
                 end
               else
