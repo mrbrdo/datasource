@@ -1,8 +1,10 @@
 # Datasource
 
+**Make sure you are reading the README corresponding to the version your are using**
+
 Automatically preload your ORM records for your serializer.
 
-## Install
+#### Install
 
 Add to Gemfile
 
@@ -15,7 +17,7 @@ bundle install
 rails g datasource:install
 ```
 
-## Upgrade
+#### Upgrade
 
 ```
 rails g datasource:install
@@ -30,27 +32,18 @@ rails g datasource:install
 
 - active_model_serializers
 
-## Basic Usage
+## Simple Mode
 
-### Attributes
-You don't have to do anything special if the attribute is **a database column**.
-
-```ruby
-class UserSerializer < ActiveModel::Serializer
-  attributes :id, :email
-end
-```
-
-But you get an optimized query for free:
-
-```sql
-SELECT id, email FROM users
-```
-
-If the attribute is **not a database column**, see [Model Methods and Virtual Attributes](#model-methods-and-virtual-attributes).
+Datasource is configured to run in Simple mode by default, which makes it easier
+to start with, but disables some advanced optimizations. See
+[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for more
+information after you understand Simple mode.
 
 ### Associations
-You don't have to do anything special.
+
+The most noticable magic effect of using Datasource in Simple mode (Advanced mode
+has other benefits) is that associations will automatically be preloaded using a
+single query.
 
 ```ruby
 class PostSerializer < ActiveModel::Serializer
@@ -62,55 +55,13 @@ class UserSerializer < ActiveModel::Serializer
   has_many :posts
 end
 ```
-
-But you get automatic association preloading ("includes") with optimized queries for free:
-
 ```sql
-SELECT id FROM users
-SELECT id, title, user_id FROM posts WHERE id IN (?)
+SELECT users.* FROM users
+SELECT posts.* FROM posts WHERE id IN (?)
 ```
 
 This means you **do not** need to call `includes` yourself. It will be done
 automatically by Datasource.
-
-### Model Methods and Virtual Attributes
-If you try to use a model method or virtual attribute in your serializer, you will
-get an error from Datasource. Since the method computes the value based on some
-other attributes, you need to tell Datasource what these dependencies are.
-
-To do this, call `computed` in a `datasource_module` block like in the below
-example. It can depend on database columns, other computed attributes or loaders
-(advanced feature).
-
-```ruby
-class User < ActiveRecord::Base
-  datasource_module do
-    # The method first_name_initial depends on first_name column
-    computed :first_name_initial, :first_name
-    # The method both_initials (in the serializer)
-    # depends on first_name and last_name columns
-    computed :both_initials, :first_name, :last_name
-  end
-
-  # method can be in model
-  def first_name_initial
-    first_name[0].upcase
-  end
-end
-
-class UserSerializer < ActiveModel::Serializer
-  attributes :first_name_initial, :both_initials
-
-  # method can also be in serializer
-  def both_initials
-    object.last_name[0].upcase + object.last_name[0].upcase
-  end
-end
-```
-
-```sql
-SELECT first_name, last_name FROM users
-```
 
 ### Show action
 
@@ -143,8 +94,6 @@ class UsersController < ApplicationController
 end
 ```
 
-## Advanced Usage
-
 ### Query attribute
 
 You can specify a SQL fragment for `SELECT` and use that as an attribute on your
@@ -165,7 +114,7 @@ end
 ```
 
 ```sql
-SELECT users.id, (users.first_name || ' ' || users.last_name) AS full_name FROM users
+SELECT users.*, (users.first_name || ' ' || users.last_name) AS full_name FROM users
 ```
 
 Note: If you need data from another table, use a join in a loader (see below).
@@ -176,8 +125,13 @@ You might want to have some more complex preloading logic. In that case you can 
 A loader will receive ids of the records, and needs to return a hash.
 The key of the hash must be the id of the record for which the value is.
 
-A loader will only be executed if a computed attribute depends on it. If an attribute depends
-on multiple loaders, pass an array of loaders like so `computed :attr, loaders: [:loader1, :loader2]`.
+A loader will only be executed if a computed attribute depends on it. See
+[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for
+information about computed attributes (but this works the same way in Simple mode).
+A more simple alternative to loader which doesn't require computed attributes is to use
+[Loaded](#loaded).
+If an attribute depends on multiple loaders, pass an array of loaders like
+so `computed :attr, loaders: [:loader1, :loader2]`.
 
 Be careful that if your hash does not contain a value for the object ID, the loaded value
 will be nil. However you can use the `default` option for such cases (see below example).
@@ -206,7 +160,7 @@ end
 ```
 
 ```sql
-SELECT users.id FROM users
+SELECT users.* FROM users
 SELECT user_id, COUNT(id) FROM posts WHERE user_id IN (?)
 ```
 
@@ -242,8 +196,8 @@ end
 
 ### Loaded
 
-Loaded is the same as loader, but it also creates a computed attribute and defines
-a method with the same name on your model.
+Loaded is the same as loader, but it automatically creates a computed attribute
+and defines a method with the same name on your model.
 
 Here is the previous example with `loaded` instead of `loader`:
 
@@ -294,54 +248,3 @@ end
 User.first.post_count # <- your method will be called
 
 ```
-
-### Using Datasource without a serializer
-
-You can also use Datasource without a specific serializer:
-
-```ruby
-Post.with_datasource.datasource_select(:id, :title, :comments).to_a
-```
-
-This is actually more or less what `for_serializer` does under the hood. It
-determines the arguments for `datasource_select` from the serializer's metadata.
-
-### Selecting additional attributes
-
-You can also use `for_serializer` and then select additional attributes. A real
-world example where you might need this is in a loader:
-
-```ruby
-class Comment < ActiveRecord::Base
-  belongs_to :post
-end
-
-class Post < ActiveRecord::Base
-  has_many :comments
-
-  datasource_module do
-    loaded :newest_comment, group_by: :post_id, one: true do |post_ids|
-      Comment.for_serializer.where(post_id: post_ids)
-        .group("post_id")
-        .having("id = MAX(id)")
-        .datasource_select(:post_id)
-    end
-  end
-end
-
-class CommentSerializer < ActiveModel::Serializer
-  attributes :id, :comment
-end
-
-class PostSerializer < ActiveModel::Serializer
-  attributes :id, :title, :newest_comment
-
-  def newest_comment
-    CommentSerializer.new(object.newest_comment).as_json
-  end
-end
-```
-
-In this case, the `CommentSerializer` does not need `post_id`, however we need it
-for the loader's `group_by`. So we used both `for_serializer` and also
-`datasource_select(:post_id)` to additionally select `post_id`.
