@@ -136,22 +136,20 @@ module Datasource
         end
       end
 
-      def load_association(records, name)
+      def load_association(records, name, assoc_select)
         return if records.empty?
         return if records.first.association(name.to_sym).loaded?
         klass = records.first.class
         if reflection = klass.reflections[name.to_sym]
           assoc_class = association_klass(reflection)
           datasource_class = assoc_class.default_datasource
-          # TODO: extract serializer_class from parent serializer association
-          serializer_class = Datasource::Base.consumer_adapter.get_serializer_for(assoc_class)
 
-          # TODO: can we make it use datasource scope (with_serializer)? like Sequel
           scope = assoc_class.all
           datasource = datasource_class.new(scope)
-          datasource_select = serializer_class._attributes.dup
-          Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], datasource_select)
-          datasource.select(*datasource_select)
+          assoc_select_attributes = assoc_select.reject { |att| att.kind_of?(Hash) }
+          assoc_select_associations = assoc_select.select { |att| att.kind_of?(Hash) }
+          Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], assoc_select_attributes)
+          datasource.select(*assoc_select_attributes)
           select_values = datasource.get_select_values
 
           begin
@@ -163,8 +161,10 @@ module Datasource
           end
 
           assoc_records = records.flat_map { |record| record.send(name) }.compact
-          serializer_class._associations.each_pair do |assoc_name, options|
-            load_association(assoc_records, assoc_name)
+          assoc_select_associations.each do |assocs|
+            assocs.each_pair do |assoc_name, assoc_select|
+              load_association(assoc_records, assoc_name, assoc_select)
+            end
           end
           datasource.results(assoc_records)
         end
@@ -193,7 +193,7 @@ module Datasource
 
       def load_associations(ds, records)
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
-          load_association(records, assoc_name)
+          load_association(records, assoc_name, assoc_select)
         end
       end
 
