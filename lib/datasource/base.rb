@@ -204,28 +204,28 @@ module Datasource
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
 
-      @expose_attributes.each do |name|
-        att = self.class._attributes[name]
-        klass = att[:klass]
-        next unless klass
+      unless rows.empty?
+        @expose_attributes.each do |name|
+          att = self.class._attributes[name]
+          klass = att[:klass]
+          next unless klass
 
-        next if rows.empty?
-
-        if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-          att[:klass]._loader_depends.each do |name|
-            if loader = self.class._loaders[name]
-              if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
-                unless rows.first.loaded_values
+          if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
+            att[:klass]._loader_depends.each do |name|
+              if loader = self.class._loaders[name]
+                if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
+                  unless rows.first.loaded_values
+                    rows.each do |row|
+                      row.loaded_values = {}
+                    end
+                  end
                   rows.each do |row|
-                    row.loaded_values = {}
+                    row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
                   end
                 end
-                rows.each do |row|
-                  row.loaded_values[name] = loaded_values[row.send(self.class.primary_key)] || loader.default_value
-                end
+              else
+                raise Datasource::Error, "loader with name :#{name} could not be found"
               end
-            else
-              raise Datasource::Error, "loader with name :#{name} could not be found"
             end
           end
         end
