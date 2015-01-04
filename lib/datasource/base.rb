@@ -206,7 +206,6 @@ module Datasource
 
       @expose_attributes.each do |name|
         att = self.class._attributes[name]
-        fail Datasource::Error, "attribute #{name} doesn't exist for #{self.class.orm_klass.name}, did you forget to call \"computed :#{name}, :db_column_dependency\" in your datasource_module? See https://github.com/mrbrdo/datasource#model-methods--virtual-attributes" unless att
         klass = att[:klass]
         next unless klass
 
