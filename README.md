@@ -1,8 +1,8 @@
 # Datasource
 
-**Make sure you are reading the README corresponding to the version your are using**
-
-Automatically preload your ORM records for your serializer.
+- Automatically preload associations for your serializers
+- Specify custom SQL snippets for virtual attributes (Query attributes)
+- Write custom preloading logic in a reusable way
 
 #### Install
 
