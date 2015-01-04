@@ -35,7 +35,7 @@ def expect_query_count(count)
     ActiveRecord::Base.logger = old_logger
     # puts logger.string
   end
-  expect(count).to eq(logger.string.lines.count)
+  expect(logger.string.lines.count).to eq(count)
 end
 
 def expect_query_count_sequel(count)
@@ -48,5 +48,5 @@ def expect_query_count_sequel(count)
     Sequel::Model.db.loggers.delete(logger)
     # puts logger_io.string
   end
-  expect(count).to eq(logger_io.string.lines.count)
+  expect(logger_io.string.lines.count).to eq(count)
 end

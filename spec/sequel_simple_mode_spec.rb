@@ -2,8 +2,13 @@ require 'spec_helper'
 
 module SequelSimpleModeSpec
   describe "Simple Mode (Sequel)", :sequel, :simple_mode do
+    class Comment < Sequel::Model
+      many_to_one :post
+    end
+
     class Post < Sequel::Model
       many_to_one :blog
+      one_to_many :comments
 
       datasource_module do
         query :author_name do
@@ -16,8 +21,13 @@ module SequelSimpleModeSpec
       one_to_many :posts
     end
 
+    class CommentSerializer < ActiveModel::Serializer
+      attributes :id, :comment
+    end
+
     class PostSerializer < ActiveModel::Serializer
       attributes :id, :title, :author_name
+      has_many :comments, each_serializer: CommentSerializer
 
       def author_name
         object.values[:author_name]
@@ -32,24 +42,28 @@ module SequelSimpleModeSpec
 
     it "returns serialized hash" do
       blog = Blog.create title: "Blog 1"
-      Post.create blog_id: blog.id, title: "Post 1", author_first_name: "John", author_last_name: "Doe"
-      Post.create blog_id: blog.id, title: "Post 2", author_first_name: "Maria", author_last_name: "Doe"
+      post = Post.create blog_id: blog.id, title: "Post 1", author_first_name: "John", author_last_name: "Doe"
+      Comment.create(post_id: post.id, comment: "Comment 1")
+      post = Post.create blog_id: blog.id, title: "Post 2", author_first_name: "Maria", author_last_name: "Doe"
+      Comment.create(post_id: post.id, comment: "Comment 2")
       blog = Blog.create title: "Blog 2"
 
       expected_result = [
         {:id =>1, :title =>"Blog 1", :posts =>[
-          {:id =>1, :title =>"Post 1", :author_name =>"John Doe"},
-          {:id =>2, :title =>"Post 2", :author_name =>"Maria Doe"}
+          {:id =>1, :title =>"Post 1", :author_name =>"John Doe", comments: [{:id =>1, :comment =>"Comment 1"}]},
+          {:id =>2, :title =>"Post 2", :author_name =>"Maria Doe", comments: [{:id =>2, :comment =>"Comment 2"}]}
         ]},
         {:id =>2, :title =>"Blog 2", :posts =>[]}
       ]
 
-      expect_query_count_sequel(2) do |logger|
+      expect_query_count_sequel(3) do |logger|
         serializer = ActiveModel::ArraySerializer.new(Blog.where, each_serializer: BlogSerializer)
         expect(expected_result).to eq(serializer.as_json)
         expect(logger.string.lines[0]).to include("blogs.*")
         expect(logger.string.lines[1]).to include("posts.*")
         expect(logger.string.lines[1]).to_not include("posts.title")
+        expect(logger.string.lines[2]).to include("comments.*")
+        expect(logger.string.lines[2]).to_not include("comments.comment")
       end
     end
   end
