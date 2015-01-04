@@ -15,6 +15,12 @@ bundle install
 rails g datasource:install
 ```
 
+## Upgrade
+
+```
+rails g datasource:install
+```
+
 #### ORM support
 
 - ActiveRecord

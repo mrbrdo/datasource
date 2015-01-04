@@ -11,7 +11,9 @@ require 'sequel'
 require 'datasource'
 require 'active_model_serializers'
 
-Datasource.load(:activerecord, :sequel, :ams)
+Datasource.setup do |config|
+  config.adapters = [:activerecord, :sequel, :ams]
+end
 
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each { |f| require f }
 

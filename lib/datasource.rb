@@ -1,6 +1,8 @@
+require 'datasource/configuration'
 module Datasource
   Error = Class.new(StandardError)
   RecursionError = Class.new(StandardError)
+  include Configuration
 
   AdapterPaths = {
     activerecord: 'datasource/adapters/active_record',
@@ -12,23 +14,21 @@ module Datasource
 
 module_function
   def load(*adapters)
-    if adapters.empty?
-      adapters = []
-      if defined? ActiveRecord
-        adapters.push(:activerecord)
-      elsif defined? Sequel
-        adapters.push(:sequel)
-      end
-      if defined? ActiveModel::Serializer
-        adapters.push(:ams)
-      end
+    unless adapters.empty?
+      warn "[DEPRECATION] passing adapters to Datasource.load is deprecated. Use Datasource.setup instead."
+      config.adapters = adapters
     end
 
-    adapters.each do |adapter|
+    config.adapters.each do |adapter|
       adapter = AdapterPaths[adapter]
       adapter = AdapterPaths[adapter] if adapter.is_a?(Symbol)
       require adapter
     end
+  end
+
+  def setup
+    yield(config)
+    load
   end
 
   def orm_adapters
