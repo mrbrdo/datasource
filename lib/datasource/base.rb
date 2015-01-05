@@ -123,7 +123,9 @@ module Datasource
         else
           name = name.to_s
           if name == "*"
-            newly_exposed_attributes.concat(select_all_columns.map(&:to_s))
+            columns = select_all_columns.map(&:to_s)
+            @expose_attributes = (@expose_attributes + columns).uniq
+            newly_exposed_attributes.concat(columns)
           elsif self.class._attributes.key?(name)
             unless @expose_attributes.include?(name)
               @expose_attributes.push(name)
@@ -135,7 +137,7 @@ module Datasource
         end
       end
       update_dependencies(newly_exposed_attributes) unless newly_exposed_attributes.empty?
-      fail_missing_attributes(missing_attributes) unless missing_attributes.blank?
+      fail_missing_attributes(missing_attributes) unless missing_attributes.empty?
       self
     end
 
@@ -146,7 +148,7 @@ module Datasource
         "attribute or association #{names.first} doesn't exist "
       end
       message += "for #{self.class.orm_klass.name}, "
-      message += "did you forget to call \"computed :#{name}, <dependencies>\" in your datasource_module?"
+      message += "did you forget to call \"computed :#{names.first}, <dependencies>\" in your datasource_module?"
       fail Datasource::Error, message
     end
 
