@@ -123,9 +123,7 @@ module Datasource
         else
           name = name.to_s
           if name == "*"
-            columns = select_all_columns.map(&:to_s)
-            @expose_attributes = (@expose_attributes + columns).uniq
-            newly_exposed_attributes.concat(columns)
+            select_all_columns
           elsif self.class._attributes.key?(name)
             unless @expose_attributes.include?(name)
               @expose_attributes.push(name)
