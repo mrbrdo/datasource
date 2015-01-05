@@ -135,7 +135,7 @@ module Datasource
         end
       end
       update_dependencies(newly_exposed_attributes) unless newly_exposed_attributes.empty?
-      fail_missing_attributes(missing_attributes) unless missing_attributes.empty?
+      fail_missing_attributes(missing_attributes) unless Datasource.config.simple_mode || missing_attributes.empty?
       self
     end
 
