@@ -88,7 +88,11 @@ module Datasource
           end
 
           def default_datasource
-            @default_datasource ||= Datasource::From(self)
+            @default_datasource ||= begin
+              "#{name}Datasource".constantize
+            rescue NameError
+              Datasource::From(self)
+            end
           end
 
           def datasource_module(&block)
