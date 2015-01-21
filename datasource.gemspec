@@ -12,7 +12,7 @@ Gem::Specification.new do |s|
   s.summary = %q{Ruby library to automatically preload records for your serializers}
   s.licenses    = ['MIT']
 
-  s.add_dependency 'active_model_serializers', '>= 0.9'
+  s.add_dependency 'active_model_serializers', '>= 0.8'
   s.add_dependency 'activesupport', '>= 4.0'
   s.add_development_dependency 'rspec', '~> 3.1'
   s.add_development_dependency 'sqlite3', '~> 1.3'
