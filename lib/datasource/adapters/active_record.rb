@@ -59,7 +59,7 @@ module Datasource
         extend ActiveSupport::Concern
 
         included do
-          attr_accessor :loaded_values
+          attr_accessor :loaded_values, :_from_datasource
         end
 
         def for_serializer(serializer = nil)
@@ -108,7 +108,10 @@ module Datasource
             if all.respond_to?(:datasource_set)
               all
             else
-              all.extending(ScopeExtensions).datasource_set(datasource_class: datasource_class || default_datasource)
+              datasource_class ||= default_datasource
+
+              all.extending(ScopeExtensions)
+              .datasource_set(datasource_class: datasource_class)
             end
           end
         end

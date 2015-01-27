@@ -13,7 +13,7 @@ module Datasource
             records = objects
               .with_datasource(datasource_class)
               .for_serializer(options[:serializer])
-              .datasource_params(*([options[:datasource_params]] || []))
+              .datasource_params(*[options[:datasource_params]].compact)
               .all.to_a # all needed for Sequel eager loading
 
             initialize_without_datasource(records, options)

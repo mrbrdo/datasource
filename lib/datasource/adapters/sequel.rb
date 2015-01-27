@@ -4,35 +4,45 @@ module Datasource
   module Adapters
     module Sequel
       module ScopeExtensions
-        def use_datasource_serializer(value)
-          @datasource_serializer = value
+        def self.extended(mod)
+          mod.instance_exec do
+            @datasource_info ||= { select: [], params: [] }
+          end
+        end
+
+        def datasource_set(hash)
+          @datasource_info.merge!(hash)
           self
         end
 
-        def use_datasource(value)
-          @datasource = value
+        def datasource_select(*args)
+          @datasource_info[:select] += args
+          self
+        end
+
+        def datasource_params(*args)
+          @datasource_info[:params] += args
           self
         end
 
         def get_datasource
-          datasource = @datasource.new(self)
-          datasource.select(*Array(@datasource_select))
-          if @datasource_serializer
+          klass = @datasource_info[:datasource_class]
+          datasource = klass.new(self)
+          datasource.select(*Array(@datasource_info[:select]))
+          if @datasource_info[:serializer_class]
             select = []
-            Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
+            Datasource::Base.consumer_adapter.to_datasource_select(select, klass.orm_klass, @datasource_info[:serializer_class], nil, datasource.adapter)
 
             datasource.select(*select)
+          end
+          unless @datasource_info[:params].empty?
+            datasource.params(*@datasource_info[:params])
           end
           datasource
         end
 
-        def datasource_select(*args)
-          @datasource_select = Array(@datasource_select) + args
-          self
-        end
-
         def each(&block)
-          if @datasource
+          if @datasource_info[:datasource_class]
             datasource = get_datasource
 
             datasource.results.each(&block)
@@ -46,25 +56,31 @@ module Datasource
         extend ActiveSupport::Concern
 
         included do
-          attr_accessor :loaded_values
+          attr_accessor :loaded_values, :_from_datasource
 
           dataset_module do
-            def for_serializer(serializer = nil)
-              scope = if respond_to?(:use_datasource_serializer)
-                self
-              else
-                self.extend(ScopeExtensions).use_datasource(Adapters::Sequel.scope_to_class(self).default_datasource)
-              end
-              scope.use_datasource_serializer(serializer || Datasource::Base.consumer_adapter.get_serializer_for(Adapters::Sequel.scope_to_class(scope)))
+            def for_serializer(serializer_class = nil)
+              scope = scope_with_datasource_ext
+              serializer_class ||=
+                Datasource::Base.consumer_adapter
+                .get_serializer_for(Adapters::Sequel.scope_to_class(scope))
+              scope.datasource_set(serializer_class: serializer_class)
             end
 
-            def with_datasource(datasource = nil)
-              scope = if respond_to?(:use_datasource)
+            def with_datasource(datasource_class = nil)
+              scope_with_datasource_ext(datasource_class)
+            end
+
+          private
+            def scope_with_datasource_ext(datasource_class = nil)
+              if respond_to?(:datasource_set)
                 self
               else
+                datasource_class ||= Adapters::Sequel.scope_to_class(self).default_datasource
+
                 self.extend(ScopeExtensions)
+                .datasource_set(datasource_class: datasource_class)
               end
-              scope.use_datasource(datasource || default_datasource)
             end
           end
         end
@@ -183,8 +199,8 @@ module Datasource
         end
         # TODO: remove/disable datasource on scope if present
         scope = select_scope(ds)
-        if scope.respond_to?(:use_datasource)
-          scope = scope.clone.use_datasource(nil)
+        if scope.respond_to?(:datasource_set)
+          scope = scope.clone.datasource_set(datasource_class: nil)
         end
         scope
         .select_append(*get_sequel_select_values(append_select.map { |v| primary_scope_table(ds) + ".#{v}" }))

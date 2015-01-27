@@ -12,22 +12,22 @@ module LoaderSpec
       has_many :comments
 
       datasource_module do
-        loader :newest_comment, group_by: :post_id, one: true do |post_ids|
-          Comment.for_serializer.where(post_id: post_ids)
+        loader :newest_comment, group_by: :post_id, one: true do |collection|
+          Comment.for_serializer.where(post_id: collection.ids)
             .group("post_id")
             .having("id = MAX(id)")
             .datasource_select(:post_id)
         end
 
-        loader :newest_comment_text, array_to_hash: true do |post_ids|
-          Comment.where(post_id: post_ids)
+        loader :newest_comment_text, array_to_hash: true do |collection|
+          Comment.where(post_id: collection.ids)
             .group("post_id")
             .having("id = MAX(id)")
             .pluck("post_id, comment")
         end
 
-        loader :ordered_comments, group_by: :post_id do |post_ids|
-          Comment.for_serializer(CommentSerializer).where(post_id: post_ids)
+        loader :ordered_comments, group_by: :post_id do |collection|
+          Comment.for_serializer(CommentSerializer).where(post_id: collection.ids)
             .order("post_id, id desc")
             .datasource_select(:post_id)
         end
@@ -87,8 +87,8 @@ module LoaderSpec
       has_many :comments, foreign_key: "post_id"
 
       datasource_module do
-        loaded :newest_comment, group_by: :post_id, one: true do |post_ids|
-          Comment.for_serializer.where(post_id: post_ids)
+        loaded :newest_comment, group_by: :post_id, one: true do |collection|
+          Comment.for_serializer.where(post_id: collection.ids)
             .group("post_id")
             .having("id = MAX(id)")
             .datasource_select(:post_id)

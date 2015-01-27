@@ -254,37 +254,41 @@ module Datasource
       self.class._collection_context.new(@scope, rows, self, @params)
     end
 
+    def get_loader_dependencies
+      @expose_attributes
+      .map { |name|
+        self.class._attributes[name]
+      }.select { |att|
+        att[:klass] && att[:klass].ancestors.include?(Attributes::ComputedAttribute)
+      }.flat_map { |att|
+        att[:klass]._loader_depends
+      }.uniq
+      .map { |loader_name|
+        loader =
+          self.class._loaders[loader_name] or
+          fail Datasource::Error, "loader with name :#{loader_name} could not be found"
+        [loader_name, loader]
+      }
+    end
+
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
       collection_context = get_collection_context(rows)
 
       unless rows.empty?
-        @expose_attributes.each do |name|
-          att = self.class._attributes[name]
-          klass = att[:klass]
-          next unless klass
+        loader_dependencies = get_loader_dependencies.map do |(loader_name, loader)|
+          [loader_name, loader.load(collection_context)]
+        end
 
-          if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
-            att[:klass]._loader_depends.each do |name|
-              if loader = self.class._loaders[name]
-                if loaded_values = loader.load(collection_context)
-                  unless rows.first.loaded_values
-                    rows.each do |row|
-                      row.loaded_values = {}
-                    end
-                  end
-                  rows.each do |row|
-                    key = row.send(self.class.primary_key)
-                    if loaded_values.key?(key)
-                      row.loaded_values[name] = loaded_values[key]
-                    elsif loader.default_value
-                      row.loaded_values[name] = loader.default_value
-                    end
-                  end
-                end
-              else
-                raise Datasource::Error, "loader with name :#{name} could not be found"
-              end
+        rows.each do |row|
+          row._from_datasource = self
+          row.loaded_values = {}
+          loader_dependencies.each do |(name, loaded_values)|
+            key = row.send(self.class.primary_key)
+            if loaded_values.try!(:key?, key)
+              row.loaded_values[name] = loaded_values[key]
+            elsif loader.default_value
+              row.loaded_values[name] = loader.default_value
             end
           end
         end
