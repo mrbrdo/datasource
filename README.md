@@ -250,6 +250,28 @@ end
 User.first.post_count # <- your model method will be called
 ```
 
+### Params
+
+You can also specify params that can be read from collection methods. The params
+can be specified when you call `render`:
+
+```ruby
+# controller
+  render json: posts,
+    datasource_params: { include_newest_comments: true }
+
+# datasource
+  loaded :newest_comments, default: []
+
+  collection do
+    def load_newest_comments
+      if params[:include_newest_comments]
+        # ...
+      end
+    end
+  end
+```
+
 ## Getting Help
 
 If you find a bug, please report an [Issue](https://github.com/mrbrdo/datasource/issues/new).
