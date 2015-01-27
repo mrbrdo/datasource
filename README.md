@@ -45,9 +45,8 @@ on advanced mode, which enables optimization of SELECT clauses.
 
 ### Associations
 
-The most noticable magic effect of using Datasource in Simple mode (Advanced mode
-has other benefits) is that associations will automatically be preloaded using a
-single query.
+The most noticable magic effect of using Datasource is that associations will
+automatically be preloaded using a single query.
 
 ```ruby
 class PostSerializer < ActiveModel::Serializer
@@ -69,7 +68,8 @@ automatically by Datasource.
 
 ### Show action
 
-You will probably want to reuse the same preloading logic in your show action.
+If you use the more advanced features like Loaded, you will probably want to
+reuse the same loading logic in your show action.
 You will need to call `for_serializer` on the scope before you call `find`.
 You can optionally give it the serializer class as an argument.
 
@@ -165,7 +165,7 @@ class UserDatasource < Datasource::From(User)
   collection do
     def load_post_count
       results = Post
-        .where(user_id: user_ids)
+        .where(user_id: model_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
@@ -236,7 +236,7 @@ class UserDatasource < Datasource::From(User)
   collection do
     def load_post_count
       results = Post
-        .where(user_id: user_ids)
+        .where(user_id: model_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
