@@ -4,12 +4,16 @@
 - Specify custom SQL snippets for virtual attributes (Query attributes)
 - Write custom preloading logic in a reusable way
 
+** Note: the API of this gem is still unstable and may change a lot between versions! This project uses semantic versioning (until version 1.0.0, minor version changes may include API changes, but patch version will not) **
+
 #### Install
 
-Add to Gemfile
+Requires Ruby 2.0 or higher.
+
+Add to Gemfile (recommended to use github version until API is stable)
 
 ```
-gem 'datasource'
+gem 'datasource', github: 'mrbrdo/datasource'
 ```
 
 ```
@@ -34,10 +38,10 @@ rails g datasource:install
 
 ## Simple Mode
 
-Datasource is configured to run in Simple mode by default, which makes it easier
-to start with, but disables some advanced optimizations. See
-[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for more
-information after you understand Simple mode.
+Datasource is configured to run in Simple mode by default, which should be good
+enough for most use-cases. See
+[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for details
+on advanced mode, which enables optimization of SELECT clauses.
 
 ### Associations
 
@@ -117,136 +121,133 @@ end
 SELECT users.*, (users.first_name || ' ' || users.last_name) AS full_name FROM users
 ```
 
-Note: If you need data from another table, use a join in a loader (see below).
+Note: If you need data from another table, use a join in a loaded value (see below).
 
-### Loader
+### Standalone Datasource class
 
-You might want to have some more complex preloading logic. In that case you can use a loader.
-A loader will receive ids of the records, and needs to return a hash.
-The key of the hash must be the id of the record for which the value is.
-
-A loader will only be executed if a computed attribute depends on it. See
-[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for
-information about computed attributes (but this works the same way in Simple mode).
-A more simple alternative to loader which doesn't require computed attributes is to use
-[Loaded](#loaded).
-If an attribute depends on multiple loaders, pass an array of loaders like
-so `computed :attr, loaders: [:loader1, :loader2]`.
-
-Be careful that if your hash does not contain a value for the object ID, the loaded value
-will be nil. However you can use the `default` option for such cases (see below example).
+If you are going to have more complex preloading logic (like using Loaded below),
+then it might be better to put Datasource code into its own class. This is pretty
+easy, just create a directory `app/datasources` (or whatever you like), and create
+a file depending on your model name, for example for a `Post` model, create
+`post_datasource.rb`. The name is important for auto-magic reasons. Example file:
 
 ```ruby
-class User < ActiveRecord::Base
-  datasource_module do
-    computed :post_count, loader: :post_counts
-    loader :post_counts, array_to_hash: true, default: 0 do |user_ids|
-      results = Post
-        .where(user_id: user_ids)
-        .group(:user_id)
-        .pluck("user_id, COUNT(id)")
-    end
-  end
-end
-
-class UserSerializer < ActiveModel::Serializer
-  attributes :id, :post_count
-
-  def post_count
-    # Will automatically give you the value for this user's ID
-    object._datasource_loaded[:post_counts]
-  end
-end
-```
-
-```sql
-SELECT users.* FROM users
-SELECT user_id, COUNT(id) FROM posts WHERE user_id IN (?)
-```
-
-Datasource provides shortcuts to transform your data into a hash. Here are examples:
-
-```ruby
-loader :stuff, array_to_hash: true do |ids|
-  [[1, "first"], [2, "second"]]
-  # will be transformed into
-  # { 1 => "first", 2 => "second" }
-end
-
-loader :stuff, group_by: :user_id do |ids|
-  Post.where(user_id: ids)
-  # will be transformed into
-  # { 1 => [#<Post>, #<Post>, ...], 2 => [ ... ], ... }
-end
-
-loader :stuff, group_by: :user_id, one: true do |ids|
-  Post.where(user_id: ids)
-  # will be transformed into
-  # { 1 => #<Post>, 2 => #<Post>, ... }
-end
-
-loader :stuff, group_by: "user_id", one: true do |ids|
-  # it works the same way on an array of hashes
-  # but be careful about Symbol/String difference
-  [{ "title" => "Something", "user_id" => 10 }]
-  # will be transformed into
-  # { 10 => { "title" => "Something", "user_id" => 10 } }
+class PostDatasource < Datasource::From(Post)
+  query(:full_name) { "users.first_name || ' ' || users.last_name" }
 end
 ```
 
 ### Loaded
 
-Loaded is the same as loader, but it automatically creates a computed attribute
-and defines a method with the same name on your model.
+You might want to have some more complex preloading logic. In that case you can
+use a method to load values for all the records at once (e.g. with a custom query
+or even from a cache). The loading methods are only executed if you use the values,
+otherwise they will be skipped.
 
-Here is the previous example with `loaded` instead of `loader`:
+First just declare that you want to have a loaded attribute (the parameters will be explained shortly):
 
 ```ruby
-class User < ActiveRecord::Base
-  datasource_module do
-    loaded :post_count, array_to_hash: true, default: 0 do |user_ids|
-      results = Post
-        .where(user_id: user_ids)
-        .group(:user_id)
-        .pluck("user_id, COUNT(id)")
-    end
-  end
-end
-
-class UserSerializer < ActiveModel::Serializer
-  attributes :id, :post_count
-  # Note that the User now has a generated post_count method
+class UserDatasource < Datasource::From(User)
+  loaded :post_count, from: :array, default: 0
 end
 ```
 
-When using `loaded`, if you already have the method with this name defined in your
-model, datasource will automatically create a 'wrapper' method that will use the
-loaded value if available (when you are using a serializer/datasource), otherwise
-it will fallback to your original method. This way you can still use the same
-method when you are not using a serializer/datasource. For example:
+By default, datasource will look for a method named `load_<name>` for loading
+the values, in this case `load_newest_comment`. It needs to be defined in the
+collection block, which has methods to access information about the collection (posts)
+that are being loaded. These methods are `scope`, `models`, `model_ids`,
+`datasource`, `datasource_class` and `params`.
 
 ```ruby
-class User < ActiveRecord::Base
-  datasource_module do
-    loaded :post_count, array_to_hash: true, default: 0 do |user_ids|
+class UserDatasource < Datasource::From(User)
+  loaded :post_count, from: :array, default: 0
+
+  collection do
+    def load_post_count
       results = Post
         .where(user_id: user_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
   end
+end
+```
+
+In this case `load_post_count` returns an array of pairs.
+For example: `[[1, 10], [2, 5]]`. Datasource can understand this because of
+`from: :array`. This would result in the following:
+
+```ruby
+post_id_1.post_count # => 10
+post_id_2.post_count # => 5
+# other posts will have the default value or nil if no default value was given
+other_post.post_count # => 0
+```
+
+Besides `default` and `from: :array`, you can also specify `group_by`, `one`
+and `source`. Source is just the name of the load method.
+
+The other two are explained in the following example.
+
+```ruby
+class PostDatasource < Datasource::From(Post)
+  loaded :newest_comment, group_by: :post_id, one: true, source: :load_newest_comment
+
+  collection do
+    def load_newest_comment
+      Comment.for_serializer.where(post_id: model_ids)
+        .group("post_id")
+        .having("id = MAX(id)")
+    end
+  end
+end
+```
+
+In this case the load method returns an ActiveRecord relation, which for our purposes
+acts the same as an Array (so we could also return an Array if we wanted).
+Using `group_by: :post_id` in the `loaded` call tells datasource to group the
+results in this array by that attribute (or key if it's an array of hashes instead
+of model objects). `one: true` means that we only want a single value instead of
+an array of values (we might want multiple, e.g. `newest_10_comments`).
+So in this case, if we had a Post with id 1, `post.newest_comment` would be a
+Comment from the array that has `post_id` equal to 1.
+
+In this case, in the load method, we also used `for_serializer`, which will load
+the `Comment`s according to the `CommentSerializer`.
+
+Note that it's perfectly fine (even good) to already have a method with the same
+name in your model.
+If you use that method outside of serializers/datasource, it will work just as
+it should. But when using datasource, it will be overwritten by the datasource
+version. Counts is a good example:
+
+```ruby
+class User < ActiveRecord::Base
+  has_many :posts
 
   def post_count
     posts.count
   end
 end
 
-class UserSerializer < ActiveModel::Serializer
-  attributes :id, :post_count # <- post_count will be read from _datasource_loaded
+class UserDatasource < Datasource::From(User)
+  loaded :post_count, from: :array, default: 0
+
+  collection do
+    def load_post_count
+      results = Post
+        .where(user_id: user_ids)
+        .group(:user_id)
+        .pluck("user_id, COUNT(id)")
+    end
+  end
 end
 
-User.first.post_count # <- your method will be called
+class UserSerializer < ActiveModel::Serializer
+  attributes :id, :post_count # <- post_count will be read from load_post_count
+end
 
+User.first.post_count # <- your model method will be called
 ```
 
 ## Getting Help
