@@ -59,7 +59,7 @@ module Datasource
         extend ActiveSupport::Concern
 
         included do
-          attr_accessor :loaded_values, :_from_datasource
+          attr_accessor :_datasource_loaded, :_datasource_instance
         end
 
         def for_serializer(serializer = nil)

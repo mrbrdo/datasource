@@ -281,14 +281,14 @@ module Datasource
         end
 
         rows.each do |row|
-          row._from_datasource = self
-          row.loaded_values = {}
-          loader_dependencies.each do |(name, loaded_values)|
+          row._datasource_instance = self
+          row._datasource_loaded = {}
+          loader_dependencies.each do |(name, _datasource_loaded)|
             key = row.send(self.class.primary_key)
-            if loaded_values.try!(:key?, key)
-              row.loaded_values[name] = loaded_values[key]
+            if _datasource_loaded.try!(:key?, key)
+              row._datasource_loaded[name] = _datasource_loaded[key]
             elsif loader.default_value
-              row.loaded_values[name] = loader.default_value
+              row._datasource_loaded[name] = loader.default_value
             end
           end
         end

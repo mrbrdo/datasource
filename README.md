@@ -154,7 +154,7 @@ class UserSerializer < ActiveModel::Serializer
 
   def post_count
     # Will automatically give you the value for this user's ID
-    object.loaded_values[:post_counts]
+    object._datasource_loaded[:post_counts]
   end
 end
 ```
@@ -242,7 +242,7 @@ class User < ActiveRecord::Base
 end
 
 class UserSerializer < ActiveModel::Serializer
-  attributes :id, :post_count # <- post_count will be read from loaded_values
+  attributes :id, :post_count # <- post_count will be read from _datasource_loaded
 end
 
 User.first.post_count # <- your method will be called

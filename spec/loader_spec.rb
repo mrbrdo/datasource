@@ -43,8 +43,8 @@ module LoaderSpec
       end
 
       def newest_comment_text
-        if loaded_values
-          loaded_values[:newest_comment_text]
+        if _datasource_loaded
+          _datasource_loaded[:newest_comment_text]
         else
           comments.order(:id).last.comment
         end
@@ -59,15 +59,15 @@ module LoaderSpec
       attributes :id, :title, :newest_comment, :newest_comment_text, :ordered_comments
 
       def newest_comment
-        CommentSerializer.new(object.loaded_values[:newest_comment]).as_json
+        CommentSerializer.new(object._datasource_loaded[:newest_comment]).as_json
       end
 
       def ordered_comments
-        ActiveModel::ArraySerializer.new(object.loaded_values[:ordered_comments]).as_json
+        ActiveModel::ArraySerializer.new(object._datasource_loaded[:ordered_comments]).as_json
       end
 
       def newest_comment_text
-        object.loaded_values[:newest_comment_text]
+        object._datasource_loaded[:newest_comment_text]
       end
     end
 
