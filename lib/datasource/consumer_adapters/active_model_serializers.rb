@@ -12,7 +12,9 @@ module Datasource
 
             records = objects
               .with_datasource(datasource_class)
-              .for_serializer(options[:serializer]).all.to_a # all needed for Sequel eager loading
+              .for_serializer(options[:serializer])
+              .datasource_params(*([options[:datasource_params]] || []))
+              .all.to_a # all needed for Sequel eager loading
 
             initialize_without_datasource(records, options)
           else
@@ -37,8 +39,12 @@ module Datasource
         adapter ||= Datasource::Base.default_adapter
         serializer ||= get_serializer_for(klass, serializer_assoc)
         result.unshift("*") if Datasource.config.simple_mode
-        result.concat(serializer._attributes)
-        result_assocs = {}
+        if serializer._attributes.respond_to?(:keys)  # AMS 0.8
+          result.concat(serializer._attributes.keys)
+        else                                          # AMS 0.9
+          result.concat(serializer._attributes)
+        end
+        result_assocs = serializer.datasource_includes.dup
         result.push(result_assocs)
 
         serializer._associations.each_pair do |name, serializer_assoc|
@@ -72,5 +78,31 @@ array_serializer_class.class_exec do
   include Datasource::ConsumerAdapters::ActiveModelSerializers::ArraySerializer
   def initialize(*args)
     initialize_with_datasource(*args)
+  end
+end
+
+ActiveModel::Serializer.class_exec do
+  def self.datasource_includes(*args)
+    @datasource_includes ||= {}
+
+    Array(args).each do |arg|
+      @datasource_includes.deep_merge!(datasource_includes_to_select(arg))
+    end
+
+    @datasource_includes
+  end
+
+private
+  def self.datasource_includes_to_select(arg)
+    if arg.kind_of?(Hash)
+      arg.keys.inject({}) do |memo, key|
+        memo[key.to_sym] = ["*", datasource_includes_to_select(arg[key])]
+        memo
+      end
+    elsif arg.respond_to?(:to_sym)
+      { arg.to_sym => ["*"] }
+    else
+      fail Datasource::Error, "unknown includes value type #{arg.class}"
+    end
   end
 end

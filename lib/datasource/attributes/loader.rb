@@ -68,15 +68,19 @@ module Datasource
 
     def self.loaded(name, _options = {}, &block)
       loader(name, _options, &block)
-      renamed_existing_method = :"#{name}_without_datasource"
       orm_klass.class_eval do
-        alias_method renamed_existing_method, name if method_defined?(name)
-        fail "#{name} already defined on #{to_s}, would be overridden by datasource loaded method" if method_defined?(name)
+        if method_defined?(name)
+          renamed_existing_method = :"#{name}_without_datasource"
+          alias_method renamed_existing_method, name
+        end
+
         define_method name do |*args, &block|
           if loaded_values || !method_defined?(renamed_existing_method)
             loaded_values[name.to_sym]
-          else
+          elsif renamed_existing_method
             send(renamed_existing_method, *args, &block)
+          else
+            method_missing(name, *args, &block)
           end
         end
       end

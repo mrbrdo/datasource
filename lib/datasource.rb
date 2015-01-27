@@ -38,6 +38,7 @@ module_function
   end
 end
 
+require 'datasource/collection_context'
 require 'datasource/base'
 
 require 'datasource/attributes/computed_attribute'

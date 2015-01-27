@@ -1,13 +1,14 @@
 module Datasource
   class Base
     class << self
-      attr_accessor :_attributes, :_associations, :_update_scope, :_loaders
+      attr_accessor :_attributes, :_associations, :_update_scope, :_loaders, :_collection_context
       attr_writer :orm_klass
 
       def inherited(base)
         base._attributes = (_attributes || {}).dup
         base._associations = (_associations || {}).dup
         base._loaders = (_loaders || {}).dup
+        base._collection_context = Class.new(_collection_context || CollectionContext)
       end
 
       def default_adapter
@@ -37,6 +38,10 @@ module Datasource
         else
           fail Datasource::Error, "unsupported association type #{reflection[:macro]} - TODO"
         end
+      end
+
+      def collection(&block)
+        _collection_context.class_exec(&block)
       end
 
     private
@@ -84,6 +89,21 @@ module Datasource
       @expose_attributes = []
       @expose_associations = {}
       @select_all_columns = false
+      @params = {}
+    end
+
+    def params(*args)
+      args.each do |arg|
+        if arg.kind_of?(Hash)
+          @params.deep_merge!(arg.symbolize_keys)
+        elsif arg.is_a?(Symbol)
+          @params.merge!(arg => true)
+        else
+          fail Datasource::Error, "unknown parameter type #{arg.class}"
+        end
+      end
+
+      @params
     end
 
     def select_all_columns
@@ -230,8 +250,13 @@ module Datasource
       adapter.upgrade_records(self, Array(records))
     end
 
+    def get_collection_context(rows)
+      self.class._collection_context.new(@scope, rows, self, @params)
+    end
+
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
+      collection_context = get_collection_context(rows)
 
       unless rows.empty?
         @expose_attributes.each do |name|
@@ -242,7 +267,7 @@ module Datasource
           if att[:klass].ancestors.include?(Attributes::ComputedAttribute)
             att[:klass]._loader_depends.each do |name|
               if loader = self.class._loaders[name]
-                if loaded_values = loader.load(rows.map(&self.class.primary_key), rows, @scope)
+                if loaded_values = loader.load(collection_context)
                   unless rows.first.loaded_values
                     rows.each do |row|
                       row.loaded_values = {}

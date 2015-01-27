@@ -5,36 +5,46 @@ module Datasource
   module Adapters
     module ActiveRecord
       module ScopeExtensions
-        def use_datasource_serializer(value)
-          @datasource_serializer = value
-          self
+        def self.extended(mod)
+          mod.instance_exec do
+            @datasource_info ||= { select: [], params: [] }
+          end
         end
 
-        def use_datasource(value)
-          @datasource = value
+        def datasource_set(hash)
+          @datasource_info.merge!(hash)
           self
         end
 
         def datasource_select(*args)
-          @datasource_select = Array(@datasource_select) + args
+          @datasource_info[:select] += args
+          self
+        end
+
+        def datasource_params(*args)
+          @datasource_info[:params] += args
           self
         end
 
         def get_datasource
-          datasource = @datasource.new(self)
-          datasource.select(*Array(@datasource_select))
-          if @datasource_serializer
+          klass = @datasource_info[:datasource_class]
+          datasource = klass.new(self)
+          datasource.select(*@datasource_info[:select])
+          if @datasource_info[:serializer_class]
             select = []
-            Datasource::Base.consumer_adapter.to_datasource_select(select, @datasource.orm_klass, @datasource_serializer, nil, datasource.adapter)
+            Datasource::Base.consumer_adapter.to_datasource_select(select, klass.orm_klass, @datasource_info[:serializer_class], nil, datasource.adapter)
 
             datasource.select(*select)
+          end
+          unless @datasource_info[:params].empty?
+            datasource.params(*@datasource_info[:params])
           end
           datasource
         end
 
       private
         def exec_queries
-          if @datasource
+          if @datasource_info[:datasource_class]
             datasource = get_datasource
 
             @loaded = true
@@ -69,22 +79,16 @@ module Datasource
         end
 
         module ClassMethods
-          def for_serializer(serializer = nil)
-            scope = if all.respond_to?(:use_datasource_serializer)
-              all
-            else
-              all.extending(ScopeExtensions).use_datasource(default_datasource)
-            end
-            scope.use_datasource_serializer(serializer || Datasource::Base.consumer_adapter.get_serializer_for(Adapters::ActiveRecord.scope_to_class(scope)))
+          def for_serializer(serializer_class = nil)
+            scope = scope_with_datasource_ext
+            serializer_class ||=
+              Datasource::Base.consumer_adapter.get_serializer_for(
+                Adapters::ActiveRecord.scope_to_class(scope))
+            scope.datasource_set(serializer_class: serializer_class)
           end
 
-          def with_datasource(datasource = nil)
-            scope = if all.respond_to?(:use_datasource)
-              all
-            else
-              all.extending(ScopeExtensions)
-            end
-            scope.use_datasource(datasource || default_datasource)
+          def with_datasource(datasource_class = nil)
+            scope_with_datasource_ext(datasource_class)
           end
 
           def default_datasource
@@ -97,6 +101,15 @@ module Datasource
 
           def datasource_module(&block)
             default_datasource.instance_exec(&block)
+          end
+
+        private
+          def scope_with_datasource_ext(datasource_class = nil)
+            if all.respond_to?(:datasource_set)
+              all
+            else
+              all.extending(ScopeExtensions).datasource_set(datasource_class: datasource_class || default_datasource)
+            end
           end
         end
       end
@@ -211,8 +224,8 @@ module Datasource
         ds.select(*append_select)
 
         scope = select_scope(ds)
-        if scope.respond_to?(:use_datasource)
-          scope = scope.spawn.use_datasource(nil)
+        if scope.respond_to?(:datasource_set)
+          scope = scope.spawn.datasource_set(datasource_class: nil)
         end
         scope.includes_values = []
         scope.to_a.tap do |records|
