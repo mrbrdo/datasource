@@ -1,7 +1,7 @@
 require 'spec_helper'
 
-module LoaderSpec
-  describe "Loader" do
+module LoadedSpec
+  describe "Loaded" do
     class Comment < ActiveRecord::Base
       self.table_name = "comments"
       belongs_to :post
@@ -12,29 +12,31 @@ module LoaderSpec
       has_many :comments
 
       datasource_module do
-        loader :newest_comment, group_by: :post_id, one: true do |collection|
-          Comment.for_serializer.where(post_id: collection.ids)
-            .group("post_id")
-            .having("id = MAX(id)")
-            .datasource_select(:post_id)
-        end
+        loaded :newest_comment, group_by: :post_id, one: true
+        loaded :newest_comment_text, from: :array
+        loaded :ordered_comments, group_by: :post_id
 
-        loader :newest_comment_text, array_to_hash: true do |collection|
-          Comment.where(post_id: collection.ids)
-            .group("post_id")
-            .having("id = MAX(id)")
-            .pluck("post_id, comment")
-        end
+        collection do
+          def load_ordered_comments
+            Comment.for_serializer(CommentSerializer).where(post_id: model_ids)
+              .order("post_id, id desc")
+              .datasource_select(:post_id)
+          end
 
-        loader :ordered_comments, group_by: :post_id do |collection|
-          Comment.for_serializer(CommentSerializer).where(post_id: collection.ids)
-            .order("post_id, id desc")
-            .datasource_select(:post_id)
-        end
+          def load_newest_comment_text
+            Comment.where(post_id: model_ids)
+              .group("post_id")
+              .having("id = MAX(id)")
+              .pluck("post_id, comment")
+          end
 
-        computed :newest_comment, loaders: :newest_comment
-        computed :newest_comment_text, loaders: :newest_comment_text
-        computed :ordered_comments, loaders: :ordered_comments
+          def load_newest_comment
+            Comment.for_serializer.where(post_id: model_ids)
+              .group("post_id")
+              .having("id = MAX(id)")
+              .datasource_select(:post_id)
+          end
+        end
       end
 
       def name_initials
@@ -43,11 +45,7 @@ module LoaderSpec
       end
 
       def newest_comment_text
-        if _datasource_loaded
-          _datasource_loaded[:newest_comment_text]
-        else
-          comments.order(:id).last.comment
-        end
+        comments.order(:id).last.comment
       end
     end
 
@@ -59,19 +57,15 @@ module LoaderSpec
       attributes :id, :title, :newest_comment, :newest_comment_text, :ordered_comments
 
       def newest_comment
-        CommentSerializer.new(object._datasource_loaded[:newest_comment]).as_json
+        CommentSerializer.new(object.newest_comment).as_json
       end
 
       def ordered_comments
-        ActiveModel::ArraySerializer.new(object._datasource_loaded[:ordered_comments]).as_json
-      end
-
-      def newest_comment_text
-        object._datasource_loaded[:newest_comment_text]
+        ActiveModel::ArraySerializer.new(object.ordered_comments).as_json
       end
     end
 
-    it "uses loader method" do
+    it "uses loaded method" do
       post = Post.create! title: "First Post"
       2.times { |i| post.comments.create! comment: "Comment #{i+1}" }
 
@@ -87,11 +81,15 @@ module LoaderSpec
       has_many :comments, foreign_key: "post_id"
 
       datasource_module do
-        loaded :newest_comment, group_by: :post_id, one: true do |collection|
-          Comment.for_serializer.where(post_id: collection.ids)
-            .group("post_id")
-            .having("id = MAX(id)")
-            .datasource_select(:post_id)
+        loaded :newest_comment, group_by: :post_id, one: true
+
+        collection do
+          def load_newest_comment
+            Comment.for_serializer.where(post_id: model_ids)
+              .group("post_id")
+              .having("id = MAX(id)")
+              .datasource_select(:post_id)
+          end
         end
       end
 
@@ -115,7 +113,7 @@ module LoaderSpec
           2.times { |i| post.comments.create! comment: "Comment #{i+1}" }
         end
 
-        expect_query_count(4) do
+        expect_query_count(2) do
           expect(ActiveModel::ArraySerializer.new(PostWithLoaded.all).as_json).to eq(
             [
               {:id=>1, :newest_comment=>{"comment"=>{:id=>2, :comment=>"Comment 2"}}},

@@ -274,23 +274,17 @@ module Datasource
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
       collection_context = get_collection_context(rows)
+      # use WeakRef to allow GC of rows?
+      loaded_values = { _rows: rows }
 
       unless rows.empty?
         loader_dependencies = get_loader_dependencies.map do |(loader_name, loader)|
-          [loader_name, loader.load(collection_context)]
+          loaded_values[loader_name] = loader.load(collection_context)
         end
 
         rows.each do |row|
           row._datasource_instance = self
-          row._datasource_loaded = {}
-          loader_dependencies.each do |(name, _datasource_loaded)|
-            key = row.send(self.class.primary_key)
-            if _datasource_loaded.try!(:key?, key)
-              row._datasource_loaded[name] = _datasource_loaded[key]
-            elsif loader.default_value
-              row._datasource_loaded[name] = loader.default_value
-            end
-          end
+          row._datasource_loaded = loaded_values
         end
       end
 

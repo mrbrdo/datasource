@@ -43,6 +43,6 @@ require 'datasource/base'
 
 require 'datasource/attributes/computed_attribute'
 require 'datasource/attributes/query_attribute'
-require 'datasource/attributes/loader'
+require 'datasource/attributes/loaded'
 
 require 'datasource/serializer'

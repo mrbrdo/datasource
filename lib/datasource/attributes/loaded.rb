@@ -1,9 +1,8 @@
 module Datasource
   module Attributes
-    class Loader
+    class Loaded
       class << self
         attr_accessor :_options
-        attr_accessor :_load_proc
 
         def inherited(base)
           base._options = (_options || {}).dup
@@ -17,9 +16,10 @@ module Datasource
           self._options[:default]
         end
 
-        def load(*args, &block)
-          args = args.slice(0, _load_proc.arity) if _load_proc.arity >= 0
-          results = _load_proc.call(*args, &block)
+        def load(collection_context)
+          loader = collection_context.method(_options[:source])
+          args = [collection_context].slice(0, loader.arity) if loader.arity >= 0
+          results = loader.call(*args)
 
           if _options[:group_by]
             results = Array(results)
@@ -42,7 +42,7 @@ module Datasource
                 hash
               end
             end
-          elsif _options[:array_to_hash]
+          elsif _options[:from] == :array
             Array(results).inject({}) do |hash, r|
               hash[r[0]] = r[1]
               hash
@@ -57,32 +57,40 @@ module Datasource
 
   class Datasource::Base
   private
-    def self.loader(name, _options = {}, &block)
-      klass = Class.new(Attributes::Loader) do
-        # depends deps
-        options(_options)
-        self._load_proc = block
-      end
-      @_loaders[name.to_sym] = klass
-    end
-
     def self.loaded(name, _options = {}, &block)
-      loader(name, _options, &block)
-      orm_klass.class_eval do
-        if method_defined?(name)
-          renamed_existing_method = :"#{name}_without_datasource"
-          alias_method renamed_existing_method, name
-        end
+      name = name.to_sym
+      datasource_class = self
+      loader_class = Class.new(Attributes::Loaded) do
+        options(_options.reverse_merge(source: :"load_#{name}"))
+      end
+      @_loaders[name] = loader_class
 
+      method_module = Module.new do
         define_method name do |*args, &block|
-          if loaded_values || !method_defined?(renamed_existing_method)
-            loaded_values[name.to_sym]
-          elsif renamed_existing_method
-            send(renamed_existing_method, *args, &block)
+          if _datasource_loaded && _datasource_loaded.key?(name)
+            values = _datasource_loaded[name]
+            primary_key = send(datasource_class.primary_key)
+
+            if values.try!(:key?, primary_key)
+              values[primary_key]
+            elsif loader_class.default_value
+              loader_class.default_value
+            end
+          elsif _datasource_instance
+            collection_context = _datasource_instance.get_collection_context(_datasource_loaded[:_rows])
+            # NOTE: this is not thread-safe if records from same query are passed to different threads
+            _datasource_loaded[name] = loader_class.load(collection_context)
+            send(name, *args, &block)
+          elsif defined?(super)
+            super(*args, &block)
           else
             method_missing(name, *args, &block)
           end
         end
+      end
+
+      orm_klass.class_eval do
+        prepend method_module
       end
       computed name, loader: name
     end
