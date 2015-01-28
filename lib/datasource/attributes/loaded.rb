@@ -67,20 +67,12 @@ module Datasource
 
       method_module = Module.new do
         define_method name do |*args, &block|
-          if _datasource_loaded && _datasource_loaded.key?(name)
-            values = _datasource_loaded[name]
-            primary_key = send(datasource_class.primary_key)
-
-            if values.try!(:key?, primary_key)
-              values[primary_key]
-            elsif loader_class.default_value
-              loader_class.default_value
+          if _datasource_loaded
+            if _datasource_loaded.key?(name)
+              _datasource_loaded[name]
+            else
+              fail Datasource::Error, "loader #{name} called but was not selected"
             end
-          elsif _datasource_instance
-            collection_context = _datasource_instance.get_collection_context(_datasource_loaded[:_rows])
-            # NOTE: this is not thread-safe if records from same query are passed to different threads
-            _datasource_loaded[name] = loader_class.load(collection_context)
-            send(name, *args, &block)
           elsif defined?(super)
             super(*args, &block)
           else

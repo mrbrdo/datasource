@@ -44,6 +44,7 @@ module Datasource
         else                                          # AMS 0.9
           result.concat(serializer._attributes)
         end
+        result.concat(serializer.datasource_select)
         result_assocs = serializer.datasource_includes.dup
         result.push(result_assocs)
 
@@ -82,10 +83,17 @@ array_serializer_class.class_exec do
 end
 
 ActiveModel::Serializer.class_exec do
+  def self.datasource_select(*args)
+    @datasource_select ||= []
+    @datasource_select.concat(args)
+
+    @datasource_select
+  end
+
   def self.datasource_includes(*args)
     @datasource_includes ||= {}
 
-    Array(args).each do |arg|
+    args.each do |arg|
       @datasource_includes.deep_merge!(datasource_includes_to_select(arg))
     end
 
