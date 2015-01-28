@@ -29,14 +29,12 @@ module Datasource
           klass = @datasource_info[:datasource_class]
           datasource = klass.new(self)
           datasource.select(*Array(@datasource_info[:select]))
+          datasource.params(*@datasource_info[:params])
           if @datasource_info[:serializer_class]
             select = []
             Datasource::Base.consumer_adapter.to_datasource_select(select, klass.orm_klass, @datasource_info[:serializer_class], nil, datasource.adapter)
 
             datasource.select(*select)
-          end
-          unless @datasource_info[:params].empty?
-            datasource.params(*@datasource_info[:params])
           end
           datasource
         end
@@ -91,7 +89,10 @@ module Datasource
 
           scope = self.class
           .with_datasource(datasource_class)
-          .for_serializer(serializer).where(pk => send(pk))
+          .for_serializer(serializer)
+          .where(pk => send(pk))
+
+          scope = yield(scope) if block_given?
 
           datasource = scope.get_datasource
           if datasource.can_upgrade?(self)
@@ -154,7 +155,7 @@ module Datasource
         record.values.key?(name.to_sym)
       end
 
-      def get_assoc_eager_options(klass, name, assoc_select, append_select)
+      def get_assoc_eager_options(klass, name, assoc_select, append_select, params)
         if reflection = association_reflection(klass, name)
           self_append_select = []
           Datasource::Base.reflection_select(reflection, append_select, self_append_select)
@@ -166,6 +167,7 @@ module Datasource
             name => ->(ds) {
               ds.with_datasource(datasource_class)
               .datasource_select(*(assoc_select + self_append_select))
+              .datasource_params(params)
             }
           }
         else
@@ -195,7 +197,7 @@ module Datasource
         append_select = []
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
           eager.merge!(
-            get_assoc_eager_options(ds.class.orm_klass, assoc_name.to_sym, assoc_select, append_select))
+            get_assoc_eager_options(ds.class.orm_klass, assoc_name.to_sym, assoc_select, append_select, ds.params))
         end
         # TODO: remove/disable datasource on scope if present
         scope = select_scope(ds)
