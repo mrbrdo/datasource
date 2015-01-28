@@ -172,6 +172,10 @@ module Datasource
           datasource.select(*assoc_select_attributes)
           select_values = datasource.get_select_values
 
+          # TODO: manually load associations, and load them all at once for
+          # nested associations, eg. in following, load all Users in 1 query:
+          # {"user"=>["*"], "players"=>["*"], "picked_players"=>["*",
+          # {:position=>["*"]}], "parent_picked_team"=>["*", {:user=>["*"]}]}
           begin
             ::ActiveRecord::Associations::Preloader
               .new.preload(records, name, assoc_class.select(*select_values))
