@@ -274,12 +274,12 @@ module Datasource
     def results(rows = nil)
       rows ||= adapter.get_rows(self)
       collection_context = get_collection_context(rows)
-      # use WeakRef to allow GC of rows?
       loaded_values = {}
       default_values = {}
 
       unless rows.empty?
         loader_dependencies = get_loader_dependencies.map do |(loader_name, loader)|
+          Datasource.logger.info { "Running loader #{loader_name} for #{rows.first.try!(:class)}" }
           loaded_values[loader_name] = loader.load(collection_context)
           default_values[loader_name] = loader.default_value
         end

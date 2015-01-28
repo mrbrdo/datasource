@@ -45,6 +45,9 @@ module Datasource
           if @datasource_info[:datasource_class]
             datasource = get_datasource
 
+            Datasource.logger.debug { "exec_queries expose_attributes: #{datasource.expose_attributes.inspect}" }
+            Datasource.logger.debug { "exec_queries expose_associations: #{datasource.expose_associations.inspect}" }
+
             @loaded = true
             @records = datasource.results
           else
@@ -171,6 +174,8 @@ module Datasource
           assoc_select_associations = assoc_select.select { |att| att.kind_of?(Hash) }
           Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], assoc_select_attributes)
           datasource.params(params)
+
+          Datasource.logger.debug { "load_association #{records.first.try!(:class)} #{name}: #{assoc_select_attributes.inspect}" }
           datasource.select(*assoc_select_attributes)
           select_values = datasource.get_select_values
 
@@ -189,6 +194,7 @@ module Datasource
           assoc_records = records.flat_map { |record| record.send(name) }.compact
           assoc_select_associations.each do |assocs|
             assocs.each_pair do |assoc_name, assoc_select|
+              Datasource.logger.debug { "load_association nested association #{assoc_name}: #{assoc_select.inspect}" }
               load_association(assoc_records, assoc_name, assoc_select, params)
             end
           end
@@ -218,6 +224,8 @@ module Datasource
       end
 
       def load_associations(ds, records)
+        Datasource.logger.info { "Loading associations " + ds.expose_associations.keys.map(&:to_s).join(", ") + " for #{records.first.try!(:class)}s" }
+        Datasource.logger.debug { "load_associations (#{records.size} #{records.first.try!(:class)}): #{ds.expose_associations.inspect}" }
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
           load_association(records, assoc_name, assoc_select, ds.params)
         end
