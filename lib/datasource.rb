@@ -13,22 +13,14 @@ module Datasource
   }
 
 module_function
-  def load(*adapters)
-    unless adapters.empty?
-      warn "[DEPRECATION] passing adapters to Datasource.load is deprecated. Use Datasource.setup instead."
-      config.adapters = adapters
-    end
+  def setup
+    yield(config)
 
     config.adapters.each do |adapter|
       adapter = AdapterPaths[adapter]
       adapter = AdapterPaths[adapter] if adapter.is_a?(Symbol)
       require adapter
     end
-  end
-
-  def setup
-    yield(config)
-    load
   end
 
   def orm_adapters
