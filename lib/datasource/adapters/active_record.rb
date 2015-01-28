@@ -156,7 +156,7 @@ module Datasource
         end
       end
 
-      def load_association(records, name, assoc_select)
+      def load_association(records, name, assoc_select, params)
         return if records.empty?
         return if records.first.association(name.to_sym).loaded?
         klass = records.first.class
@@ -169,6 +169,7 @@ module Datasource
           assoc_select_attributes = assoc_select.reject { |att| att.kind_of?(Hash) }
           assoc_select_associations = assoc_select.select { |att| att.kind_of?(Hash) }
           Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], assoc_select_attributes)
+          datasource.params(params)
           datasource.select(*assoc_select_attributes)
           select_values = datasource.get_select_values
 
@@ -187,7 +188,7 @@ module Datasource
           assoc_records = records.flat_map { |record| record.send(name) }.compact
           assoc_select_associations.each do |assocs|
             assocs.each_pair do |assoc_name, assoc_select|
-              load_association(assoc_records, assoc_name, assoc_select)
+              load_association(assoc_records, assoc_name, assoc_select, params)
             end
           end
           datasource.results(assoc_records)
@@ -217,7 +218,7 @@ module Datasource
 
       def load_associations(ds, records)
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
-          load_association(records, assoc_name, assoc_select)
+          load_association(records, assoc_name, assoc_select, ds.params)
         end
       end
 
