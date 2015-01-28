@@ -107,6 +107,10 @@ private
         memo[key.to_sym] = ["*", datasource_includes_to_select(arg[key])]
         memo
       end
+    elsif arg.kind_of?(Array)
+      arg.inject({}) do |memo, element|
+        memo.deep_merge!(datasource_includes_to_select(element))
+      end
     elsif arg.respond_to?(:to_sym)
       { arg.to_sym => ["*"] }
     else
