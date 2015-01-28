@@ -123,7 +123,7 @@ module Datasource
 
     module_function
       def association_reflection(klass, name)
-        if reflection = klass.reflections[name]
+        if reflection = klass.reflect_on_association(name)
           {
             klass: reflection.klass,
             macro: reflection.macro,
@@ -164,7 +164,7 @@ module Datasource
         return if records.empty?
         return if records.first.association(name.to_sym).loaded?
         klass = records.first.class
-        if reflection = klass.reflections[name.to_sym]
+        if reflection = klass.reflect_on_association(name)
           assoc_class = association_klass(reflection)
           datasource_class = assoc_class.default_datasource
 
