@@ -36,13 +36,6 @@ rails g datasource:install
 
 - active_model_serializers
 
-## Simple Mode
-
-Datasource is configured to run in Simple mode by default, which should be good
-enough for most use-cases. See
-[Advanced mode](https://github.com/mrbrdo/datasource/wiki/Advanced-mode) for details
-on advanced mode, which enables optimization of SELECT clauses.
-
 ### Associations
 
 The most noticable magic effect of using Datasource is that associations will
