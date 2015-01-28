@@ -30,14 +30,12 @@ module Datasource
           klass = @datasource_info[:datasource_class]
           datasource = klass.new(self)
           datasource.select(*@datasource_info[:select])
+          datasource.params(*@datasource_info[:params])
           if @datasource_info[:serializer_class]
             select = []
             Datasource::Base.consumer_adapter.to_datasource_select(select, klass.orm_klass, @datasource_info[:serializer_class], nil, datasource.adapter)
 
             datasource.select(*select)
-          end
-          unless @datasource_info[:params].empty?
-            datasource.params(*@datasource_info[:params])
           end
           datasource
         end
@@ -68,7 +66,10 @@ module Datasource
 
           scope = self.class
           .with_datasource(datasource_class)
-          .for_serializer(serializer).where(pk => send(pk))
+          .for_serializer(serializer)
+          .where(pk => send(pk))
+
+          scope = yield(scope) if block_given?
 
           datasource = scope.get_datasource
           if datasource.can_upgrade?(self)
