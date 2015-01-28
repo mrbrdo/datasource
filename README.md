@@ -157,10 +157,9 @@ class UserDatasource < Datasource::From(User)
 
   collection do
     def load_post_count
-      results = Post
-        .where(user_id: model_ids)
-        .group(:user_id)
-        .pluck("user_id, COUNT(id)")
+      Post.where(user_id: model_ids)
+      .group(:user_id)
+      .pluck("user_id, COUNT(id)")
     end
   end
 end
@@ -228,8 +227,7 @@ class UserDatasource < Datasource::From(User)
 
   collection do
     def load_post_count
-      results = Post
-        .where(user_id: model_ids)
+      Post.where(user_id: model_ids)
         .group(:user_id)
         .pluck("user_id, COUNT(id)")
     end
