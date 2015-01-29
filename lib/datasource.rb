@@ -1,5 +1,7 @@
 require 'datasource/configuration'
 module Datasource
+  cattr_accessor :logger
+
   Error = Class.new(StandardError)
   RecursionError = Class.new(StandardError)
   include Configuration
@@ -13,17 +15,15 @@ module Datasource
   }
 
 module_function
-  def logger
-    @logger ||= Logger.new(STDOUT).tap do |logger|
+  def setup
+    self.logger ||= Logger.new(STDOUT).tap do |logger|
       logger.level = Logger::WARN
       logger.formatter = proc do |severity, datetime, progname, msg|
         "[Datasource][#{severity}] - #{msg}\n"
       end
       logger
     end
-  end
 
-  def setup
     yield(config)
 
     config.adapters.each do |adapter|
