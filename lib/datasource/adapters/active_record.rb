@@ -171,7 +171,10 @@ module Datasource
           scope = assoc_class.all
           datasource = datasource_class.new(scope)
           assoc_select_attributes = assoc_select.reject { |att| att.kind_of?(Hash) }
-          assoc_select_associations = assoc_select.select { |att| att.kind_of?(Hash) }
+          assoc_select_associations = assoc_select.inject({}) do |hash, att|
+            hash.deep_merge!(att) if att.kind_of?(Hash)
+            hash
+          end
           Datasource::Base.reflection_select(association_reflection(klass, name.to_sym), [], assoc_select_attributes)
           datasource.params(params)
 
@@ -192,13 +195,16 @@ module Datasource
           end
 
           assoc_records = records.flat_map { |record| record.send(name) }.compact
-          assoc_select_associations.each do |assocs|
-            assocs.each_pair do |assoc_name, assoc_select|
+          unless assoc_records.empty?
+            if Datasource.logger.info? && !assoc_select_associations.empty?
+              Datasource.logger.info { "Loading associations " + assoc_select_associations.keys.map(&:to_s).join(", ") + " for #{assoc_records.first.try!(:class)}s" }
+            end
+            assoc_select_associations.each_pair do |assoc_name, assoc_select|
               Datasource.logger.debug { "load_association nested association #{assoc_name}: #{assoc_select.inspect}" }
               load_association(assoc_records, assoc_name, assoc_select, params)
             end
+            datasource.results(assoc_records)
           end
-          datasource.results(assoc_records)
         end
       rescue Exception => ex
         if ex.is_a?(SystemStackError) || ex.is_a?(Datasource::RecursionError)
