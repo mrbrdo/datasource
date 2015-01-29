@@ -230,7 +230,9 @@ module Datasource
       end
 
       def load_associations(ds, records)
-        Datasource.logger.info { "Loading associations " + ds.expose_associations.keys.map(&:to_s).join(", ") + " for #{records.first.try!(:class)}s" }
+        if Datasource.logger.info? && !ds.expose_associations.empty?
+          Datasource.logger.info { "Loading associations " + ds.expose_associations.keys.map(&:to_s).join(", ") + " for #{records.first.try!(:class)}s" }
+        end
         Datasource.logger.debug { "load_associations (#{records.size} #{records.first.try!(:class)}): #{ds.expose_associations.inspect}" }
         ds.expose_associations.each_pair do |assoc_name, assoc_select|
           load_association(records, assoc_name, assoc_select, ds.params)
