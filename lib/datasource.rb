@@ -14,7 +14,7 @@ module Datasource
 
 module_function
   def logger
-    Thread.current[:datasource_logger] ||= Logger.new(STDOUT).tap do |logger|
+    @logger ||= Logger.new(STDOUT).tap do |logger|
       logger.level = Logger::WARN
       logger.formatter = proc do |severity, datetime, progname, msg|
         "[Datasource][#{severity}] - #{msg}\n"
